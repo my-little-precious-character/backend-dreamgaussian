@@ -102,16 +102,15 @@ async def upload_image(file: UploadFile = File(...), mode: str = "prod"):
         raise HTTPException(status_code=400, detail="Uploaded file is not an image.")
 
     # Generate filename
+    task_id = uuid4().hex
     file_extension = os.path.splitext(file.filename)[1]
-    filename = f"{uuid4().hex}{file_extension}"
-    file_path = os.path.join(UPLOAD_DIR, filename)
+    file_path = os.path.join(UPLOAD_DIR, f"{task_id}{file_extension}")
 
     # Store file
     with open(file_path, "wb") as buffer:
         content = await file.read()
         buffer.write(content)
 
-    task_id = uuid4().hex
     task_type = TaskType.IMAGE_TO_3D if mode == "prod" else TaskType.IMAGE_TO_3D_TEST
     task = TaskItem(id=task_id, type=task_type, data={"image_path": file_path})
     await task_queue.put(task)
