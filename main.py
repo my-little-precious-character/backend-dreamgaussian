@@ -6,7 +6,7 @@ import os
 from typing import Dict
 from uuid import uuid4
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -92,6 +92,15 @@ app.add_middleware(
 async def root():
     return {"message": "welcome"}
 
+@app.post("/text-to-3d")
+async def text_to_3d(prompt: str = Form(...), mode: str = "prod"):
+    task_id = uuid4().hex
+    task_type = TaskType.TEXT_TO_3D if mode == "prod" else TaskType.TEXT_TO_3D_TEST
+    task = TaskItem(id=task_id, type=task_type, data={"prompt": prompt})
+    await task_queue.put(task)
+    task_progress[task_id] = "queued"
+    return {"task_id": task_id}
+
 @app.post("/image-to-3d")
 async def upload_image(file: UploadFile = File(...), mode: str = "prod"):
     # Check if the uploaded file is an image
@@ -117,6 +126,7 @@ async def upload_image(file: UploadFile = File(...), mode: str = "prod"):
     # Response
     return {"task_id": task_id}
 
+@app.websocket("/text-to-3d/ws")
 @app.websocket("/image-to-3d/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -130,6 +140,7 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         ws_connections.pop(task_id, None)
 
+@app.get("/text-to-3d")
 @app.get("/image-to-3d")
 async def get_image_result(task_id: str):
     if task_progress.get(task_id) != "done":
