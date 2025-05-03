@@ -20,7 +20,7 @@ app = FastAPI()
 async def root():
     return {"message": "welcome"}
 
-@app.post("/text-to-3d/test")
+@app.post("/image-to-3d/test")
 async def upload_image(file: UploadFile = File(...)):
     # Check if the uploaded file is an image
     if not file.content_type.startswith("image/"):
