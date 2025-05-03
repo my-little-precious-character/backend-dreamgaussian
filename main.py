@@ -56,9 +56,9 @@ async def lifespan(app: FastAPI):
                 elif task.type == TaskType.IMAGE_TO_3D:
                     pass    # TODO: 실제 처리
                 elif task.type in (TaskType.TEXT_TO_3D_TEST, TaskType.IMAGE_TO_3D_TEST):
-                    for i in range(5):
-                        await asyncio.sleep(1)
-                        task_progress[task.id] = f"processing ({(i + 1) * 20}%)"
+                    for i in range(100):
+                        await asyncio.sleep(0.01)
+                        task_progress[task.id] = f"processing ({(i + 1) * 1}%)"
                     task_result_paths[task.id] = "results/sample.png.obj" # FIXME:
                 task_progress[task.id] = "done"
             except Exception as e:
@@ -128,7 +128,7 @@ async def websocket_endpoint(websocket: WebSocket):
         task_id = await websocket.receive_text()
 
         while True:
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.01)
             status = task_progress.get(task_id, "unknown")
 
             await websocket.send_text(f"status: {status}")
