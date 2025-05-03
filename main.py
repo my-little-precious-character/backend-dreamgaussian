@@ -41,7 +41,6 @@ os.makedirs(RESULT_DIR, exist_ok=True)
 task_queue = asyncio.Queue()
 task_progress: Dict[str, str] = {} # [task_id, queued | processing | done]
 task_result_paths: Dict[str, str] = {}  # [task_id, file path]
-ws_connections: Dict[str, WebSocket] = {}
 
 ######## worker ########
 
@@ -64,11 +63,6 @@ async def lifespan(app: FastAPI):
                 task_progress[task.id] = "done"
             except Exception as e:
                 task_progress[task.id] = f"error: {str(e)}"
-            finally:
-                if task.id in ws_connections:
-                    await ws_connections[task.id].send_text(f"status: {task_progress[task.id]}")
-                    await ws_connections[task.id].close()
-                    ws_connections.pop(task.id, None)
 
     # Run wordker
     asyncio.create_task(worker())
@@ -132,13 +126,18 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     try:
         task_id = await websocket.receive_text()
-        ws_connections[task_id] = websocket
-        await websocket.send_text(f"status: {task_progress.get(task_id, 'unknown')}")
-        while task_progress.get(task_id) != "done":
+
+        while True:
             await asyncio.sleep(1)
-            await websocket.send_text(f"status: {task_progress[task_id]}")
-    except WebSocketDisconnect:
-        ws_connections.pop(task_id, None)
+            status = task_progress.get(task_id, "unknown")
+
+            await websocket.send_text(f"status: {status}")
+
+            if status == "done" or status.startswith("error"):
+                break;
+
+    finally:
+        await websocket.close()
 
 @app.get("/text-to-3d")
 @app.get("/image-to-3d")
