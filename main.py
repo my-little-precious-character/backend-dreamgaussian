@@ -83,7 +83,7 @@ async def root():
     return {"message": "welcome"}
 
 @app.post("/image-to-3d")
-async def upload_image(file: UploadFile = File(...)):
+async def upload_image(file: UploadFile = File(...), mode: str = "prod"):
     # Check if the uploaded file is an image
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Uploaded file is not an image.")
@@ -99,19 +99,12 @@ async def upload_image(file: UploadFile = File(...)):
         buffer.write(content)
 
     task_id = uuid4().hex
-    task = TaskItem(id=task_id, type=TaskType.IMAGE_TO_3D, data={"image_path": file_path})
+    task_type = TaskType.IMAGE_TO_3D if mode == "prod" else TaskType.IMAGE_TO_3D_TEST
+    task = TaskItem(id=task_id, type=task_type, data={"image_path": file_path})
     await task_queue.put(task)
     task_progress[task_id] = "queued"
 
     # Response
-    return {"task_id": task_id}
-
-@app.post("/image-to-3d/test")
-async def post_image_to_3d_test():
-    task_id = uuid4().hex
-    task = TaskItem(id=task_id, type=TaskType.IMAGE_TO_3D_TEST, data={})
-    await task_queue.put(task)
-    task_progress[task_id] = "queued"
     return {"task_id": task_id}
 
 @app.websocket("/image-to-3d/ws")
