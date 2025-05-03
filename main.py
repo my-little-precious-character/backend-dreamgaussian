@@ -23,7 +23,7 @@ async def root():
 @app.post("/text-to-3d/test")
 async def upload_image(file: UploadFile = File(...)):
     # Check if the uploaded file is an image
-    if not file.content_type.startswith("imsage/"):
+    if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Uploaded file is not an image.")
 
     # Generate filename
