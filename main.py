@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 import os
 import shutil
+import subprocess
 from typing import Dict
 from uuid import uuid4
 from dotenv import load_dotenv
@@ -56,6 +57,7 @@ async def handle_test(task):
         src_path = os.path.join(SAMPLE_DIR, src)
         dst_path = os.path.join(RESULT_DIR, dst)
         shutil.copyfile(src_path, dst_path)
+        return dst_path
 
     # Wait for 1 second
     for i in range(100):
@@ -63,9 +65,25 @@ async def handle_test(task):
         task_progress[task.id] = f"processing ({(i + 1) * 1}%)"
 
     # Copy dummy results
-    copy("luigi_mesh.obj", f"{task.id}_mesh.obj")
-    copy("luigi_mesh.mtl", f"{task.id}_mesh.mtl")
-    copy("luigi_mesh_albedo.png", f"{task.id}_mesh_albedo.png")
+    mtl_filename = f"{task.id}_mesh.mtl"
+    albedo_filename = f"{task.id}_mesh_albedo.png"
+    obj_path = copy("luigi_mesh.obj", f"{task.id}_mesh.obj")
+    mtl_path = copy("luigi_mesh.mtl", mtl_filename)
+    copy("luigi_mesh_albedo.png", albedo_filename)
+
+    # Use sed to fix mtllib in .obj
+    subprocess.run([
+        "sed", "-i",
+        f"s|mtllib luigi_mesh.mtl|mtllib {mtl_filename}|g",
+        obj_path
+    ], check=True)
+
+    # Use sed to fix map_Kd in .mtl
+    subprocess.run([
+        "sed", "-i",
+        f"s|map_Kd luigi_mesh_albedo.png|map_Kd {albedo_filename}|g",
+        mtl_path
+    ], check=True)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
