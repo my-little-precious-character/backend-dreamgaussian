@@ -52,14 +52,20 @@ task_progress: Dict[str, str] = {} # [task_id, queued | processing | done]
 ######## worker ########
 
 async def handle_test(task):
+    def copy(src, dst):
+        src_path = os.path.join(SAMPLE_DIR, src)
+        dst_path = os.path.join(RESULT_DIR, dst)
+        shutil.copyfile(src_path, dst_path)
+
+    # Wait for 1 second
     for i in range(100):
         await asyncio.sleep(0.01)
         task_progress[task.id] = f"processing ({(i + 1) * 1}%)"
 
-    src_path = os.path.join(SAMPLE_DIR, "luigi_mesh.obj")
-    dst_path = os.path.join(RESULT_DIR, f"{task.id}_mesh.obj")
-
-    shutil.copyfile(src_path, dst_path)
+    # Copy dummy results
+    copy("luigi_mesh.obj", f"{task.id}_mesh.obj")
+    copy("luigi_mesh.mtl", f"{task.id}_mesh.mtl")
+    copy("luigi_mesh_albedo.png", f"{task.id}_mesh_albedo.png")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
