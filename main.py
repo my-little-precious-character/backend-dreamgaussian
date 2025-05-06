@@ -43,7 +43,6 @@ os.makedirs(RESULT_DIR, exist_ok=True)
 # queue & task
 task_queue = asyncio.Queue()
 task_progress: Dict[str, str] = {} # [task_id, queued | processing | done]
-task_result_paths: Dict[str, str] = {}  # [task_id, file path]
 
 ######## worker ########
 
@@ -56,8 +55,6 @@ async def handle_test(task):
     dst_path = os.path.join(RESULT_DIR, f"{task.id}_mesh.obj")
 
     shutil.copyfile(src_path, dst_path)
-
-    task_result_paths[task.id] = dst_path # FIXME:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -160,7 +157,7 @@ async def get_image_result(task_id: str):
     if task_progress.get(task_id) != "done":
         raise HTTPException(status_code=400, detail="Task not complete")
 
-    path = task_result_paths.get(task_id)
+    path = os.path.join(RESULT_DIR, f"{task_id}_mesh.obj")
     if not path or not os.path.exists(path):
         raise HTTPException(status_code=404, detail="File not found")
 
