@@ -7,7 +7,7 @@ import shutil
 from typing import Dict
 from uuid import uuid4
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -24,6 +24,11 @@ class TaskItem:
     id: str
     type: TaskType
     data: dict
+
+class FileType(str, Enum):
+    obj = "obj"
+    mtl = "mtl"
+    albedo = "albedo"
 
 ######## env var ########
 
@@ -153,11 +158,18 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.get("/text-to-3d")
 @app.get("/image-to-3d")
-async def get_image_result(task_id: str):
+async def get_result(task_id: str, type: FileType = Query(FileType.obj)):
     if task_progress.get(task_id) != "done":
         raise HTTPException(status_code=400, detail="Task not complete")
 
-    path = os.path.join(RESULT_DIR, f"{task_id}_mesh.obj")
+    if type == FileType.obj:
+        filename = f"{task_id}_mesh.obj"
+    elif type == FileType.mtl:
+        filename = f"{task_id}_mesh.mtl"
+    elif type == FileType.albedo:
+        filename = f"{task_id}_mesh_albedo.png"
+
+    path = os.path.join(RESULT_DIR, filename)
     if not path or not os.path.exists(path):
         raise HTTPException(status_code=404, detail="File not found")
 
