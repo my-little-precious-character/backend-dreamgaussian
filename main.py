@@ -44,6 +44,12 @@ task_result_paths: Dict[str, str] = {}  # [task_id, file path]
 
 ######## worker ########
 
+async def handle_test(task):
+    for i in range(100):
+        await asyncio.sleep(0.01)
+        task_progress[task.id] = f"processing ({(i + 1) * 1}%)"
+    task_result_paths[task.id] = "results/sample.png.obj" # FIXME:
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async def worker():
@@ -56,10 +62,7 @@ async def lifespan(app: FastAPI):
                 elif task.type == TaskType.IMAGE_TO_3D:
                     pass    # TODO: 실제 처리
                 elif task.type in (TaskType.TEXT_TO_3D_TEST, TaskType.IMAGE_TO_3D_TEST):
-                    for i in range(100):
-                        await asyncio.sleep(0.01)
-                        task_progress[task.id] = f"processing ({(i + 1) * 1}%)"
-                    task_result_paths[task.id] = "results/sample.png.obj" # FIXME:
+                    await handle_test(task)
                 task_progress[task.id] = "done"
             except Exception as e:
                 task_progress[task.id] = f"error: {str(e)}"
