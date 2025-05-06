@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import Enum
 import os
+import shutil
 from typing import Dict
 from uuid import uuid4
 from dotenv import load_dotenv
@@ -29,6 +30,8 @@ class TaskItem:
 # Load .env
 load_dotenv()
 
+SAMPLE_DIR = "results-sample"
+
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -48,7 +51,13 @@ async def handle_test(task):
     for i in range(100):
         await asyncio.sleep(0.01)
         task_progress[task.id] = f"processing ({(i + 1) * 1}%)"
-    task_result_paths[task.id] = "results/sample.png.obj" # FIXME:
+
+    src_path = os.path.join(SAMPLE_DIR, "luigi_mesh.obj")
+    dst_path = os.path.join(RESULT_DIR, f"{task.id}_mesh.obj")
+
+    shutil.copyfile(src_path, dst_path)
+
+    task_result_paths[task.id] = dst_path # FIXME:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
