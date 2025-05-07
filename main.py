@@ -5,11 +5,14 @@ from enum import Enum
 import os
 from typing import Dict, Optional
 from uuid import uuid4
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, Query, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+import shlex
+import shutil
 
+import subprocess
 
 ######## type ########
 
@@ -19,11 +22,17 @@ class TaskType(str, Enum):
     TEXT_TO_3D_TEST = "text_to_3d_test"
     IMAGE_TO_3D_TEST = "image_to_3d_test"
 
+class FileType(str, Enum):
+    obj = "obj"
+    mtl = "mtl"
+    albedo = "albedo"
+
 @dataclass
 class TaskItem:
     id: str
     type: TaskType
     data: dict
+    
 
 ######## env var ########
 
@@ -40,24 +49,86 @@ os.makedirs(RESULT_DIR, exist_ok=True)
 # print(UPLOAD_DIR)
 # print(RESULT_DIR)
 
+SAMPLE_DIR = "results-sample"
+
 ######## global variables ########
 
 # queue & task
 task_queue = asyncio.Queue()
 task_progress: Dict[str, str] = {} # [task_id, queued | processing | done | error]
-task_result_paths: Dict[str, str] = {}  # [task_id, file path]
+task_result_paths: Dict[str, str] = {}  # [task_id, directory path]
+
+
+#### test ####
+async def handle_test(task):
+    def copy(src, dst):
+        src_path = os.path.join(SAMPLE_DIR, src)
+        dst_path = os.path.join(RESULT_DIR, dst)
+        shutil.copyfile(src_path, dst_path)
+        return dst_path
+
+    # Wait for 1 second
+    for i in range(100):
+        await asyncio.sleep(0.01)
+        task_progress[task.id] = f"processing ({(i + 1) * 1}%)"
+
+    # Copy dummy results
+    mtl_filename = f"{task.id}_mesh.mtl"
+    albedo_filename = f"{task.id}_mesh_albedo.png"
+    obj_path = copy("luigi_mesh.obj", f"{task.id}_mesh.obj")
+    mtl_path = copy("luigi_mesh.mtl", mtl_filename)
+    copy("luigi_mesh_albedo.png", albedo_filename)
+
+    # Use sed to fix mtllib in .obj
+    subprocess.run([
+        "sed", "-i",
+        f"s|mtllib luigi_mesh.mtl|mtllib {mtl_filename}|g",
+        obj_path
+    ], check=True)
+
+    # Use sed to fix map_Kd in .mtl
+    subprocess.run([
+        "sed", "-i",
+        f"s|map_Kd luigi_mesh_albedo.png|map_Kd {albedo_filename}|g",
+        mtl_path
+    ], check=True)
 
 
 
 ######## 2d to 3d ########
 async def run_dreamgaussian2d(image_path: str, task_id: str, elevation: int = 0) -> Optional[str]:
     try:
+        task_progress[task_id] = "processing"
         # 파일명 설정
-        name, ext = os.path.splitext(os.path.basename(image_path))
+        name, ext = os.path.splitext(os.path.basename(image_path)) 
+        # name은 오직 파일 명
+        # 입력: "/app/backend-dreamgaussian/uploads/luigi.png"
+        # 출력: "luigi.png"
         processed_image = f"{name}_rgba.png"
-        output_path = os.path.join(RESULT_DIR, f"{name}_mesh.obj")
+        input_image_path = os.path.join(DREAMGAUSSIAN_DIR, "data", processed_image)
+        output_dir = os.path.join(DREAMGAUSSIAN_DIR, "logs", "outputs")
+        result_dir = os.path.join(RESULT_DIR, f"{task_id}")
 
-        # 명령어 1 (main.py)
+        # 1. image preprocessing (process.py)
+        process_command = f"python3 process.py {image_path}"
+        process = await asyncio.create_subprocess_exec(
+            *shlex.split(process_command),
+            cwd=os.path.join(DREAMGAUSSIAN_DIR),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+
+        if process.returncode != 0:
+            print(f"[{task_id}] process.py failed:\n{stderr.decode().strip()}")
+            return None
+        
+        # image move (UPLOAD_DIR -> data/)
+        if os.path.exists(input_image_path):
+            os.remove(input_image_path)
+        shutil.move(image_path, input_image_path)
+
+        # stage 1 (main.py)
         command_1 = f"""
         python3 main.py \
           --config configs/image.yaml  \
@@ -67,7 +138,7 @@ async def run_dreamgaussian2d(image_path: str, task_id: str, elevation: int = 0)
           force_cuda_rast=True
         """
 
-        # 명령어 2 (main2.py)
+        # stage 2 (main2.py)
         command_2 = f"""
         python3 main2.py \
           --config configs/image.yaml  \
@@ -96,8 +167,38 @@ async def run_dreamgaussian2d(image_path: str, task_id: str, elevation: int = 0)
                 print(f"[{task_id}] Error: {command} failed with code {process.returncode}")
                 return None
 
-        print(f"[{task_id}] Done: {output_path}")
-        return output_path
+        if os.path.exists(output_dir):
+            target_files = [
+                f"{name}_mesh.obj",
+                f"{name}_mesh.mtl",
+                f"{name}_mesh_albedo.png"
+            ]
+
+            if os.path.exists(result_dir):
+                # 폴더 내부의 파일만 삭제
+                for file in os.listdir(result_dir):
+                    file_path = os.path.join(result_dir, file)
+                    if os.path.isfile(file_path):
+                        os.remove(file_path)
+                    elif os.path.isdir(file_path):
+                        shutil.rmtree(file_path)
+            else:
+                # 폴더가 아예 없으면 생성
+                os.makedirs(result_dir, exist_ok=True)
+                    
+            for file in target_files:
+                src_file = os.path.join(output_dir, file)
+                dst_file = os.path.join(result_dir, file)
+                
+                if os.path.isfile(src_file):
+                    shutil.move(src_file, dst_file)
+                    print(f"Moved: {src_file} -> {dst_file}")
+            
+            print(f"[{task_id}] Done: {result_dir}")
+            return result_dir
+        
+        print(f"[{task_id}] Error: failed to make {output_dir}")
+        return None
 
     except Exception as e:
         print(f"[{task_id}] Error: {e}")
@@ -125,11 +226,8 @@ async def lifespan(app: FastAPI):
                 
                 # 테스트 모드 (비동기 작업 시뮬레이션)
                 elif task.type in (TaskType.TEXT_TO_3D_TEST, TaskType.IMAGE_TO_3D_TEST):
-                    for i in range(100):
-                        await asyncio.sleep(0.01)
-                        task_progress[task.id] = f"processing ({(i + 1) * 1}%)"
-                    task_result_paths[task.id] = "results/sample.png.obj"
-                    task_progress[task.id] = "done"
+                    await handle_test(task)
+                task_progress[task.id] = "done"
 
             except Exception as e:
                 task_progress[task.id] = f"error: {str(e)}"
@@ -181,7 +279,7 @@ async def upload_image(file: UploadFile = File(...), mode: str = "prod"):
 
     # Generate filename
     task_id = uuid4().hex
-    while task_progress.get(task_id) is not None:
+    while task_id in task_progress:
         task_id = uuid4().hex
 
     file_extension = os.path.splitext(file.filename)[1]
@@ -208,7 +306,7 @@ async def websocket_endpoint(websocket: WebSocket):
         task_id = await websocket.receive_text()
 
         while True:
-            await asyncio.sleep(0.01)
+            await asyncio.sleep(0.1)
             status = task_progress.get(task_id, "unknown")
 
             await websocket.send_text(f"status: {status}")
@@ -221,7 +319,14 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.get("/text-to-3d")
 @app.get("/image-to-3d")
-async def get_image_result(task_id: str):
+async def get_result(task_id: str,  type: FileType = Query(FileType.obj)):
+    try:
+        # 대소문자 무시하고 Enum으로 변환
+        file_type = FileType(type.lower())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid file type. Allowed values: obj, mtl, albedo")
+    
+    
     status = task_progress.get(task_id)
 
     # 문제 생긴 경우. 나중에 raise말고 return으로 바꾸기.
@@ -234,10 +339,23 @@ async def get_image_result(task_id: str):
 
     path = task_result_paths.get(task_id)
     if not path or not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="directory not found")
+
+    if type == FileType.obj:
+        filename = f"{task_id}_mesh.obj"
+    elif type == FileType.mtl:
+        filename = f"{task_id}_mesh.mtl"
+    elif type == FileType.albedo:
+        filename = f"{task_id}_mesh_albedo.png"
+    else:
         raise HTTPException(status_code=404, detail="File not found")
 
-    # task progress, task_result_path에서 task_id 제거
-    task_progress.pop(task_id, None)
-    task_result_paths.pop(task_id, None)
+    path = os.path.join(path, filename)
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # # task progress, task_result_path에서 task_id 제거
+    # task_progress.pop(task_id, None)
+    # task_result_paths.pop(task_id, None)
     
-    return FileResponse(path, media_type="application/octet-stream", filename=os.path.basename(path))
+    return FileResponse(path, media_type="application/octet-stream", filename=filename)
