@@ -3,6 +3,8 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import Enum
 import os
+import shutil
+import subprocess
 from typing import Dict, Optional
 from uuid import uuid4
 from fastapi import FastAPI, File, Form, Query, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
@@ -32,7 +34,6 @@ class TaskItem:
     id: str
     type: TaskType
     data: dict
-    
 
 ######## env var ########
 
@@ -206,6 +207,39 @@ async def run_dreamgaussian2d(image_path: str, task_id: str, elevation: int = 0)
 
 ######## worker ########
 
+async def handle_test(task):
+    def copy(src, dst):
+        src_path = os.path.join(SAMPLE_DIR, src)
+        dst_path = os.path.join(RESULT_DIR, dst)
+        shutil.copyfile(src_path, dst_path)
+        return dst_path
+
+    # Wait for 1 second
+    for i in range(100):
+        await asyncio.sleep(0.01)
+        task_progress[task.id] = f"processing ({(i + 1) * 1}%)"
+
+    # Copy dummy results
+    mtl_filename = f"{task.id}_mesh.mtl"
+    albedo_filename = f"{task.id}_mesh_albedo.png"
+    obj_path = copy("luigi_mesh.obj", f"{task.id}_mesh.obj")
+    mtl_path = copy("luigi_mesh.mtl", mtl_filename)
+    copy("luigi_mesh_albedo.png", albedo_filename)
+
+    # Use sed to fix mtllib in .obj
+    subprocess.run([
+        "sed", "-i",
+        f"s|mtllib luigi_mesh.mtl|mtllib {mtl_filename}|g",
+        obj_path
+    ], check=True)
+
+    # Use sed to fix map_Kd in .mtl
+    subprocess.run([
+        "sed", "-i",
+        f"s|map_Kd luigi_mesh_albedo.png|map_Kd {albedo_filename}|g",
+        mtl_path
+    ], check=True)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async def worker():
@@ -337,21 +371,15 @@ async def get_result(task_id: str,  type: FileType = Query(FileType.obj)):
     elif status != "done":
         raise HTTPException(status_code=400, detail="Task not complete")
 
-    path = task_result_paths.get(task_id)
-    if not path or not os.path.exists(path):
-        raise HTTPException(status_code=404, detail="directory not found")
-
     if type == FileType.obj:
         filename = f"{task_id}_mesh.obj"
     elif type == FileType.mtl:
         filename = f"{task_id}_mesh.mtl"
     elif type == FileType.albedo:
         filename = f"{task_id}_mesh_albedo.png"
-    else:
-        raise HTTPException(status_code=404, detail="File not found")
 
     path = os.path.join(path, filename)
-    if not os.path.isfile(path):
+    if not path or not os.path.isfile(path):
         raise HTTPException(status_code=404, detail="File not found")
 
     # # task progress, task_result_path에서 task_id 제거
