@@ -3,12 +3,13 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import Enum
 import os
-from typing import Dict
+from typing import Dict, Optional
 from uuid import uuid4
-from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
+
 
 ######## type ########
 
@@ -28,19 +29,79 @@ class TaskItem:
 
 # Load .env
 load_dotenv()
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DREAMGAUSSIAN_DIR = os.path.join(BASE_DIR, "..", "dreamgaussian")
+UPLOAD_DIR = os.getenv("UPLOAD_DIR", os.path.join(BASE_DIR, "uploads"))
+RESULT_DIR = os.getenv("RESULT_DIR", os.path.join(BASE_DIR, "results"))
 
-UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-RESULT_DIR = os.getenv("RESULT_DIR", "results")
 os.makedirs(RESULT_DIR, exist_ok=True)
+
+# print(UPLOAD_DIR)
+# print(RESULT_DIR)
 
 ######## global variables ########
 
 # queue & task
 task_queue = asyncio.Queue()
-task_progress: Dict[str, str] = {} # [task_id, queued | processing | done]
+task_progress: Dict[str, str] = {} # [task_id, queued | processing | done | error]
 task_result_paths: Dict[str, str] = {}  # [task_id, file path]
+
+
+
+######## 2d to 3d ########
+async def run_dreamgaussian2d(image_path: str, task_id: str, elevation: int = 0) -> Optional[str]:
+    try:
+        # 파일명 설정
+        name, ext = os.path.splitext(os.path.basename(image_path))
+        processed_image = f"{name}_rgba.png"
+        output_path = os.path.join(RESULT_DIR, f"{name}_mesh.obj")
+
+        # 명령어 1 (main.py)
+        command_1 = f"""
+        python3 main.py \
+          --config configs/image.yaml  \
+          input=data/{processed_image} \
+          save_path=outputs/{name}_mesh \
+          elevation={elevation} \
+          force_cuda_rast=True
+        """
+
+        # 명령어 2 (main2.py)
+        command_2 = f"""
+        python3 main2.py \
+          --config configs/image.yaml  \
+          input=data/{processed_image} \
+          save_path=outputs/{name}_mesh \
+          elevation={elevation} \
+          force_cuda_rast=True
+        """
+
+        # 프로세스 실행
+        for command in [command_1, command_2]:
+            process = await asyncio.create_subprocess_exec(
+                *shlex.split(command),
+                cwd=DREAMGAUSSIAN_DIR,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            while True:
+                line = await process.stdout.readline()
+                if not line:
+                    break
+                print(f"[{task_id}] {line.decode().strip()}")
+
+            await process.wait()
+            if process.returncode != 0:
+                print(f"[{task_id}] Error: {command} failed with code {process.returncode}")
+                return None
+
+        print(f"[{task_id}] Done: {output_path}")
+        return output_path
+
+    except Exception as e:
+        print(f"[{task_id}] Error: {e}")
+        return None
 
 ######## worker ########
 
@@ -54,13 +115,22 @@ async def lifespan(app: FastAPI):
                 if task.type == TaskType.TEXT_TO_3D:
                     pass    # TODO: 실제 처리
                 elif task.type == TaskType.IMAGE_TO_3D:
-                    pass    # TODO: 실제 처리
+                    image_path = task.data["image_path"]
+                    result_path = await run_dreamgaussian2d(image_path, task.id)
+                    if result_path:
+                        task_result_paths[task.id] = result_path
+                        task_progress[task.id] = "done"
+                    else:
+                        task_progress[task.id] = "error: model generation failed"
+                
+                # 테스트 모드 (비동기 작업 시뮬레이션)
                 elif task.type in (TaskType.TEXT_TO_3D_TEST, TaskType.IMAGE_TO_3D_TEST):
                     for i in range(100):
                         await asyncio.sleep(0.01)
                         task_progress[task.id] = f"processing ({(i + 1) * 1}%)"
-                    task_result_paths[task.id] = "results/sample.png.obj" # FIXME:
-                task_progress[task.id] = "done"
+                    task_result_paths[task.id] = "results/sample.png.obj"
+                    task_progress[task.id] = "done"
+
             except Exception as e:
                 task_progress[task.id] = f"error: {str(e)}"
 
@@ -68,6 +138,9 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(worker())
 
     yield
+    
+    # Server end
+    print("Server end.")
 
 ######## fastapi ########
 
@@ -78,11 +151,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
-        "http://localhost:3000",
         "https://my-character.cho0h5.org",
     ],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["*"], 
     allow_headers=["*"],
 )
 
@@ -93,6 +165,8 @@ async def root():
 @app.post("/text-to-3d")
 async def text_to_3d(prompt: str = Form(...), mode: str = "prod"):
     task_id = uuid4().hex
+    while task_id in task_progress:
+        task_id = uuid4().hex
     task_type = TaskType.TEXT_TO_3D if mode == "prod" else TaskType.TEXT_TO_3D_TEST
     task = TaskItem(id=task_id, type=task_type, data={"prompt": prompt})
     await task_queue.put(task)
@@ -107,6 +181,9 @@ async def upload_image(file: UploadFile = File(...), mode: str = "prod"):
 
     # Generate filename
     task_id = uuid4().hex
+    while task_progress.get(task_id) is not None:
+        task_id = uuid4().hex
+
     file_extension = os.path.splitext(file.filename)[1]
     file_path = os.path.join(UPLOAD_DIR, f"{task_id}{file_extension}")
 
@@ -137,7 +214,7 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.send_text(f"status: {status}")
 
             if status == "done" or status.startswith("error"):
-                break;
+                break
 
     finally:
         await websocket.close()
@@ -145,11 +222,22 @@ async def websocket_endpoint(websocket: WebSocket):
 @app.get("/text-to-3d")
 @app.get("/image-to-3d")
 async def get_image_result(task_id: str):
-    if task_progress.get(task_id) != "done":
+    status = task_progress.get(task_id)
+
+    # 문제 생긴 경우. 나중에 raise말고 return으로 바꾸기.
+    if status is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    elif status.startswith("error:"):
+        raise HTTPException(status_code=400, detail=status[7:])
+    elif status != "done":
         raise HTTPException(status_code=400, detail="Task not complete")
 
     path = task_result_paths.get(task_id)
     if not path or not os.path.exists(path):
         raise HTTPException(status_code=404, detail="File not found")
 
+    # task progress, task_result_path에서 task_id 제거
+    task_progress.pop(task_id, None)
+    task_result_paths.pop(task_id, None)
+    
     return FileResponse(path, media_type="application/octet-stream", filename=os.path.basename(path))
