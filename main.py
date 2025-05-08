@@ -14,7 +14,23 @@ from dotenv import load_dotenv
 import shlex
 import shutil
 
+import logging
+
 import subprocess
+
+
+######## make log ########
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("app.log"),
+        logging.StreamHandler()  # 콘솔 출력도 유지
+    ]
+)
+
+logger = logging.getLogger(__name__)
 
 ######## type ########
 
@@ -255,11 +271,13 @@ async def lifespan(app: FastAPI):
                     if result_path:
                         task_result_paths[task.id] = result_path
                         task_progress[task.id] = "done"
+                        logger.info(f"output test: {result_path}")
                     else:
                         task_progress[task.id] = "error: model generation failed"
                 
                 # 테스트 모드 (비동기 작업 시뮬레이션)
                 elif task.type in (TaskType.TEXT_TO_3D_TEST, TaskType.IMAGE_TO_3D_TEST):
+                    logger.info(f"test output test: {result_path}")
                     await handle_test(task)
                 task_progress[task.id] = "done"
 
@@ -267,12 +285,13 @@ async def lifespan(app: FastAPI):
                 task_progress[task.id] = f"error: {str(e)}"
 
     # Run wordker
+    logger.info("Server start.")
     asyncio.create_task(worker())
 
     yield
     
     # Server end
-    print("Server end.")
+    logger.info("Server end.")
 
 ######## fastapi ########
 
@@ -297,17 +316,25 @@ async def root():
 @app.post("/text-to-3d")
 async def text_to_3d(prompt: str = Form(...), mode: str = "prod"):
     task_id = uuid4().hex
+    logger.info("text to 3d  :1")
     while task_id in task_progress:
         task_id = uuid4().hex
+    logger.info("text to 3d  :2")
+
     task_type = TaskType.TEXT_TO_3D if mode == "prod" else TaskType.TEXT_TO_3D_TEST
     task = TaskItem(id=task_id, type=task_type, data={"prompt": prompt})
+    logger.info("text to 3d  :3")
+
     await task_queue.put(task)
     task_progress[task_id] = "queued"
+    logger.info("text to 3d  :4")
+
     return {"task_id": task_id}
 
 @app.post("/image-to-3d")
 async def upload_image(file: UploadFile = File(...), mode: str = "prod"):
     # Check if the uploaded file is an image
+
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Uploaded file is not an image.")
 
@@ -326,6 +353,8 @@ async def upload_image(file: UploadFile = File(...), mode: str = "prod"):
 
     task_type = TaskType.IMAGE_TO_3D if mode == "prod" else TaskType.IMAGE_TO_3D_TEST
     task = TaskItem(id=task_id, type=task_type, data={"image_path": file_path})
+    logger.info(f"task_type: {task_type} {mode}")
+
     await task_queue.put(task)
     task_progress[task_id] = "queued"
 
@@ -336,6 +365,7 @@ async def upload_image(file: UploadFile = File(...), mode: str = "prod"):
 @app.websocket("/image-to-3d/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
+    logger.info(f"connecting websocket: {websocket.client.host}")
     try:
         task_id = await websocket.receive_text()
 
@@ -362,6 +392,9 @@ async def get_result(task_id: str,  type: FileType = Query(FileType.obj)):
     
     
     status = task_progress.get(task_id)
+    logger.info(f"print status: {status}")
+    path = task_result_paths.get(task_id)
+
 
     # 문제 생긴 경우. 나중에 raise말고 return으로 바꾸기.
     if status is None:
@@ -370,7 +403,10 @@ async def get_result(task_id: str,  type: FileType = Query(FileType.obj)):
         raise HTTPException(status_code=400, detail=status[7:])
     elif status != "done":
         raise HTTPException(status_code=400, detail="Task not complete")
-
+    
+    if path is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
     if type == FileType.obj:
         filename = f"{task_id}_mesh.obj"
     elif type == FileType.mtl:

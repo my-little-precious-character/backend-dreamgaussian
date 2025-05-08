@@ -14,7 +14,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              count: all  
+              count: all
               capabilities: [ gpu ]
     runtime: nvidia # (일부 환경에서 필요할 수 있음)
     environment:
