@@ -1,26 +1,53 @@
-window에서 docker 이용 시 (gpu 사용을 위해)
+# Docker Setup for GPU (Windows)
 
-터미널에 아래 명령어 입력
+This guide provides step-by-step instructions for setting up Docker with GPU support on Windows using WSL.
+
+---
+
+## 1. WSL Version Check
+
+First, verify your WSL installation:
+
+```bash
 wsl -l -v
+```
 
-case 1: 
+### **Case 1:**
+
+```
   NAME                   STATE           VERSION
 * docker-desktop         Running         2
   Ubuntu                 Running         2
+```
 
-case 2:
+### **Case 2:**
+
+```
   NAME                   STATE           VERSION
 * docker-desktop         Running         2
+```
 
-case 2일때:
+If you see **Case 2**, you'll need to install Ubuntu:
+
+```bash
 wsl --install -d Ubuntu
+```
 
-이후 재부팅 => case 1처럼 뜨게 됨.
+After installation, **reboot** your machine to ensure the changes take effect. You should now see the output similar to **Case 1**.
 
-이후 wsl 설정 (docker 에서 gpu를 사용할 수 있도록)
+---
 
-wsl 
+## 2. WSL Configuration for GPU
 
+Open your WSL instance:
+
+```bash
+wsl
+```
+
+Then run the following commands to configure GPU support:
+
+```bash
 curl -fsSL https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
 sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list > /dev/null
 
@@ -32,33 +59,56 @@ sudo sed -i 's|^deb https://|deb [signed-by=/usr/share/keyrings/nvidia-container
 sudo apt update
 sudo apt install nvidia-container-toolkit
 exit
+```
 
+---
 
-Docker에서 실제로 GPU가 보이는지 테스트
+## 3. Testing GPU in Docker
 
+Verify your Docker GPU setup:
+
+```bash
 docker run --rm --gpus all nvidia/cuda:12.1.0-devel-ubuntu22.04 nvidia-smi
+```
 
-터미널에 
+Expected output (sample):
+
+```
 +-----------------------------------------------------------------------------+
 | NVIDIA-SMI 535.86.05    Driver Version: ...    CUDA Version: 12.1          |
-| GPU Name        Persistence-M | Bus-Id | ...
-| ... (GPU 정보 출력) ...
+| GPU Name        Persistence-M | Bus-Id | ...                               |
+| ... (GPU 정보 출력) ...                                           |
 +-----------------------------------------------------------------------------+
-이런 꼴로 출력된다면 설정 완료.
+```
 
+If you see a similar output, your GPU is correctly configured.
 
+---
 
+## 4. Docker Compose Commands
 
-// docker compose 파일로 build 및 실행
+Build and run your Docker containers:
 
-docker compose up --build       # 빌드 후 실시간 실행
-<!-- 다른 터미널에서  -->
-docker exec -it dreamgaussian bash  # 직접 들어가기
+```bash
+docker compose up --build
+```
 
+Access the container:
 
-// container들 재시작
+```bash
+docker exec -it dreamgaussian bash
+```
+
+Restart all running containers:
+
+```bash
 docker compose restart
+```
 
+Run the main application:
 
-// 실행
+```bash
 uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+---
