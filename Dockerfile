@@ -45,9 +45,9 @@ RUN pip3 install git+https://github.com/ashawkey/kiuikit
 
 # Create a data directory
 RUN mkdir -p /app/dreamgaussian/data
+RUN mkdir -p /app/backend-dreamgaussian
 
-WORKDIR /app
-RUN git clone https://github.com/my-little-precious-character/backend-dreamgaussian.git /app/backend-dreamgaussian
+COPY . /app/backend-dreamgaussian/
 WORKDIR /app/backend-dreamgaussian
 
 # install dependencies

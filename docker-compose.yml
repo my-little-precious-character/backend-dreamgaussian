@@ -4,11 +4,11 @@ services:
   dreamgaussian:
     image: dreamgaussian #이미지 이름
     build:
-      context: ./dreamgaussian-docker
-      dockerfile: Dockerfile
+      dockerfile: ./Dockerfile
     container_name: dreamgaussian
     ports:
       - "7722:8000" # 호스트 7722 → 컨테이너 8000
+      - "5173:5173" # for front test
     deploy:
       resources:
         reservations:
