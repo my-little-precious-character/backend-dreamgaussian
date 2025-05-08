@@ -111,6 +111,80 @@ async def handle_test(task):
     ], check=True)
 
 
+######## text to 3d ########
+async def run_dreamgaussian_text(task_id: str, task_promt: dict[str, str], elevation: int = 0) -> Optional[str]:
+    try:
+        task_progress[task_id] = "processing"
+        
+        output_dir = os.path.join(DREAMGAUSSIAN_DIR, "logs", "outputs")
+        result_dir = os.path.join(RESULT_DIR, f"{task_id}")
+
+        command = f"""
+        python3 main2.py \
+          --config configs/text.yaml  \
+          prompt=\"{task_promt.values}\" \
+          save_path=outputs/{task_id}_mesh \
+          elevation={elevation} \
+          force_cuda_rast=True
+        """
+
+        # 프로세스 실행
+        process = await asyncio.create_subprocess_exec(
+            *shlex.split(command),
+            cwd=DREAMGAUSSIAN_DIR,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        while True:
+            line = await process.stdout.readline()
+            if not line:
+                break
+            print(f"[{task_id}] {line.decode().strip()}")
+
+        await process.wait()
+        if process.returncode != 0:
+            print(f"[{task_id}] Error: {command} failed with code {process.returncode}")
+            return None
+
+        if os.path.exists(output_dir):
+            target_files = [
+                f"{task_id}_mesh.obj",
+                f"{task_id}_mesh.mtl",
+                f"{task_id}_mesh_albedo.png"
+            ]
+
+            if os.path.exists(result_dir):
+                # 폴더 내부의 파일만 삭제
+                for file in os.listdir(result_dir):
+                    file_path = os.path.join(result_dir, file)
+                    if os.path.isfile(file_path):
+                        os.remove(file_path)
+                    elif os.path.isdir(file_path):
+                        shutil.rmtree(file_path)
+            else:
+                # 폴더가 아예 없으면 생성
+                os.makedirs(result_dir, exist_ok=True)
+                    
+            for file in target_files:
+                src_file = os.path.join(output_dir, file)
+                dst_file = os.path.join(result_dir, file)
+                
+                if os.path.isfile(src_file):
+                    shutil.move(src_file, dst_file)
+                    print(f"Moved: {src_file} -> {dst_file}")
+            
+            print(f"[{task_id}] Done: {result_dir}")
+            return result_dir
+        
+        print(f"[{task_id}] Error: failed to make {output_dir}")
+        return None
+
+    except Exception as e:
+        print(f"[{task_id}] Error: {e}")
+        return None
+
+
+
 
 ######## 2d to 3d ########
 async def run_dreamgaussian2d(image_path: str, task_id: str, elevation: int = 0) -> Optional[str]:
@@ -264,20 +338,27 @@ async def lifespan(app: FastAPI):
             task_progress[task.id] = "processing"
             try:
                 if task.type == TaskType.TEXT_TO_3D:
-                    pass    # TODO: 실제 처리
+                    result_path = await run_dreamgaussian_text(task.id, task.data)
+                    if result_path:
+                        task_result_paths[task.id] = result_path
+                        task_progress[task.id] = "done"
+                        logger.info(f"[DEBUG] output test: {result_path}")
+                    else:
+                        task_progress[task.id] = "error: model generation failed"
+
                 elif task.type == TaskType.IMAGE_TO_3D:
                     image_path = task.data["image_path"]
                     result_path = await run_dreamgaussian2d(image_path, task.id)
                     if result_path:
                         task_result_paths[task.id] = result_path
                         task_progress[task.id] = "done"
-                        logger.info(f"output test: {result_path}")
+                        logger.info(f"[DEBUG] output test: {result_path}")
                     else:
                         task_progress[task.id] = "error: model generation failed"
                 
                 # 테스트 모드 (비동기 작업 시뮬레이션)
                 elif task.type in (TaskType.TEXT_TO_3D_TEST, TaskType.IMAGE_TO_3D_TEST):
-                    logger.info(f"test output test: {result_path}")
+                    logger.info(f"[DEBUG] test output test: {result_path}")
                     await handle_test(task)
                 task_progress[task.id] = "done"
 
@@ -316,18 +397,14 @@ async def root():
 @app.post("/text-to-3d")
 async def text_to_3d(prompt: str = Form(...), mode: str = "prod"):
     task_id = uuid4().hex
-    logger.info("text to 3d  :1")
     while task_id in task_progress:
         task_id = uuid4().hex
-    logger.info("text to 3d  :2")
 
     task_type = TaskType.TEXT_TO_3D if mode == "prod" else TaskType.TEXT_TO_3D_TEST
     task = TaskItem(id=task_id, type=task_type, data={"prompt": prompt})
-    logger.info("text to 3d  :3")
 
     await task_queue.put(task)
     task_progress[task_id] = "queued"
-    logger.info("text to 3d  :4")
 
     return {"task_id": task_id}
 
@@ -353,7 +430,7 @@ async def upload_image(file: UploadFile = File(...), mode: str = "prod"):
 
     task_type = TaskType.IMAGE_TO_3D if mode == "prod" else TaskType.IMAGE_TO_3D_TEST
     task = TaskItem(id=task_id, type=task_type, data={"image_path": file_path})
-    logger.info(f"task_type: {task_type} {mode}")
+    logger.info(f"[DEBUG] task_type: {task_type} {mode}")
 
     await task_queue.put(task)
     task_progress[task_id] = "queued"
@@ -365,7 +442,7 @@ async def upload_image(file: UploadFile = File(...), mode: str = "prod"):
 @app.websocket("/image-to-3d/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    logger.info(f"connecting websocket: {websocket.client.host}")
+    logger.info(f"[DEBUG] connected host: {websocket.client.host}:{websocket.client.port}")
     try:
         task_id = await websocket.receive_text()
 
@@ -392,7 +469,7 @@ async def get_result(task_id: str,  type: FileType = Query(FileType.obj)):
     
     
     status = task_progress.get(task_id)
-    logger.info(f"print status: {status}")
+    logger.info(f"[DEBUG] print status: {status}")
     path = task_result_paths.get(task_id)
 
 
