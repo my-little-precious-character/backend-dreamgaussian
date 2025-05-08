@@ -1,0 +1,32 @@
+{
+  "name": "DreamGaussian Container",
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "dreamgaussian",
+  "workspaceFolder": "/app",
+  "settings": {
+    // 파일 감시 최소화
+    "files.watcherExclude": {
+      "**/node_modules/**": true,
+      "**/.git/objects/**": true,
+      "**/.vscode-server/**": true
+    },
+    // 검색 범위 최소화
+    "search.useIgnoreFiles": true,
+    "search.exclude": {
+      "**/node_modules": true,
+      "**/build": true
+    },
+    // 기타 최적화
+    "terminal.integrated.shell.linux": "/bin/bash"
+  },
+  "runArgs": [
+    "--gpus",
+    "all"
+  ],
+  "extensions": [
+    "ms-python.python"
+  ],
+  "mounts": [],
+  "postCreateCommand": "echo 'Devcontainer ready!'",
+  "remoteUser": "root"
+}

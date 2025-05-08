@@ -1,0 +1,27 @@
+version: "3.8"
+
+services:
+  dreamgaussian:
+    image: dreamgaussian #이미지 이름
+    build:
+      context: ./dreamgaussian-docker
+      dockerfile: Dockerfile
+    container_name: dreamgaussian
+    ports:
+      - "7722:8000" # 호스트 7722 → 컨테이너 8000
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all  
+              capabilities: [ gpu ]
+    runtime: nvidia # (일부 환경에서 필요할 수 있음)
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    restart: unless-stopped
+    # working_dir: /app/backend-dreamgaussian
+    # command: uvicorn main:app --host 0.0.0.0 --port 8000
+    command: bash
+    stdin_open: true
+    tty: true
