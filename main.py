@@ -90,9 +90,9 @@ async def handle_test(task) -> Optional[str]:
     os.makedirs(result_path, exist_ok=True)
     
     # Wait for 1 second
-    for i in range(100):
-        await asyncio.sleep(0.01)
-        task_progress[task.id] = f"processing ({(i + 1) * 1}%)"
+    # for i in range(100):
+    #     await asyncio.sleep(0.01)
+    #     task_progress[task.id] = f"processing ({(i + 1) * 1}%)"
 
     # Copy dummy results
     mtl_filename = f"{task.id}_mesh.mtl"
@@ -152,12 +152,11 @@ async def run_dreamgaussian_text(task_id: str, task_promt: dict[str, str], eleva
             line = await process.stdout.readline()
             if not line:
                 break
-            print(f"[{task_id}] {line.decode().strip()}")
-            task_progress[task_id] = f"processing ({min(99, int(time.time() - start_time))}%)"
+            logger.info(f"[{task_id}] {line.decode().strip()}")
 
         await process.wait()
         if process.returncode != 0:
-            print(f"[{task_id}] Error: {command} failed with code {process.returncode}")
+            logger.info(f"[{task_id}] Error: {command} failed with code {process.returncode}")
             return None
         
         task_progress[task_id] = f"processing (100%)"
@@ -187,16 +186,16 @@ async def run_dreamgaussian_text(task_id: str, task_promt: dict[str, str], eleva
                 
                 if os.path.isfile(src_file):
                     shutil.move(src_file, dst_file)
-                    print(f"Moved: {src_file} -> {dst_file}")
+                    logger.info(f"Moved: {src_file} -> {dst_file}")
             
-            print(f"[{task_id}] Done: {result_dir}")
+            logger.info(f"[{task_id}] Done: {result_dir}")
             return result_dir
         
-        print(f"[{task_id}] Error: failed to make {output_dir}")
+        logger.info(f"[{task_id}] Error: failed to make {output_dir}")
         return None
 
     except Exception as e:
-        print(f"[{task_id}] Error: {e}")
+        logger.info(f"[{task_id}] Error: {e}")
         return None
 
 
@@ -229,7 +228,7 @@ async def run_dreamgaussian2d(image_path: str, task_id: str, elevation: int = 0)
         stdout, stderr = await process.communicate()
 
         if process.returncode != 0:
-            print(f"[{task_id}] process.py failed:\n{stderr.decode().strip()}")
+            logger.info(f"[{task_id}] process.py failed:\n{stderr.decode().strip()}")
             return None
         
         # image move (UPLOAD_DIR -> data/)
@@ -271,13 +270,12 @@ async def run_dreamgaussian2d(image_path: str, task_id: str, elevation: int = 0)
                 line = await process.stdout.readline()
                 if not line:
                     break
-                print(f"[{task_id}] {line.decode().strip()}")
-                task_progress[task_id] = f"processing ({min(99, int(time.time() - start_time) * 2)}%)"
+                logger.info(f"[{task_id}] {line.decode().strip()}")
 
                 
             await process.wait()
             if process.returncode != 0:
-                print(f"[{task_id}] Error: {command} failed with code {process.returncode}")
+                logger.info(f"[{task_id}] Error: {command} failed with code {process.returncode}")
                 return None
             
         
@@ -308,16 +306,16 @@ async def run_dreamgaussian2d(image_path: str, task_id: str, elevation: int = 0)
                 
                 if os.path.isfile(src_file):
                     shutil.move(src_file, dst_file)
-                    print(f"Moved: {src_file} -> {dst_file}")
+                    logger.info(f"Moved: {src_file} -> {dst_file}")
             
-            print(f"[{task_id}] Done: {result_dir}")
+            logger.info(f"[{task_id}] Done: {result_dir}")
             return result_dir
         
-        print(f"[{task_id}] Error: failed to make {output_dir}")
+        logger.info(f"[{task_id}] Error: failed to make {output_dir}")
         return None
 
     except Exception as e:
-        print(f"[{task_id}] Error: {e}")
+        logger.info(f"[{task_id}] Error: {e}")
         return None
 
 
@@ -438,22 +436,48 @@ async def upload_image(file: UploadFile = File(...), mode: str = "prod"):
     return {"task_id": task_id}
 
 @app.websocket("/text-to-3d/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    logger.info(f"[DEBUG] /text-to-3d/ws, connected host: {websocket.client.host}:{websocket.client.port}")
+    try:
+        task_id = await websocket.receive_text()
+        start_time = time.time()
+        while True:
+            await asyncio.sleep(1)
+            status = task_progress.get(task_id, "unknown")
+            
+            if status == "processing":
+                status = f"processing ({min(99, int((time.time() - start_time) * 0.8))}%)"
+                
+            logger.info(f"websocket: task_id: {task_id}, status: {status}")
+            await websocket.send_text(f"status: {status}")
+            
+            if status == "done" or status.startswith("error"):
+                break
+
+    finally:
+        await websocket.close()
+
 @app.websocket("/image-to-3d/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    logger.info(f"[DEBUG] connected host: {websocket.client.host}:{websocket.client.port}")
+    logger.info(f"[DEBUG] /image-to-3d/ws, connected host: {websocket.client.host}:{websocket.client.port}")
     try:
         task_id = await websocket.receive_text()
-        # i = 0
+        start_time = time.time()
         while True:
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1)
             status = task_progress.get(task_id, "unknown")
             
+            if status == "processing":
+                status = f"processing ({min(99, int((time.time() - start_time) * 1.6))}%)"
+
             logger.info(f"websocket: task_id: {task_id}, status: {status}")
             await websocket.send_text(f"status: {status}")
-
+            
             if status == "done" or status.startswith("error"):
                 break
+
 
     finally:
         await websocket.close()
@@ -469,7 +493,7 @@ async def get_result(task_id: str,  type: FileType = Query(FileType.obj)):
     
     
     status = task_progress.get(task_id)
-    logger.info(f"[DEBUG] task_id: {task_id}, file type: {type}, print status: {status}")
+    logger.info(f"[DEBUG] task_id: {task_id}, file type: {type}, status: {status}")
     path = task_result_paths.get(task_id)
 
 
