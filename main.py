@@ -122,13 +122,12 @@ async def handle_test(task) -> Optional[str]:
 async def run_dreamgaussian_text(task_id: str, task_promt: dict[str, str], elevation: int = 0) -> Optional[str]:
     try:
         task_progress[task_id] = "processing"
-        logger.info(f"task_id: {task_id}, function: run_dreamgaussian_text")
-
         
         output_dir = os.path.join(DREAMGAUSSIAN_DIR, "logs", "outputs")
         result_dir = os.path.join(RESULT_DIR, f"{task_id}")
         
-        task_value = " ".join(task_promt.values())        
+        task_value = " ".join(task_promt.values())
+        logger.info(f"task_id: {task_id}, function: run_dreamgaussian_text, prompt: {task_value}")
 
         command_1 = f"""
         python3 main.py \
@@ -214,13 +213,13 @@ async def run_dreamgaussian_text(task_id: str, task_promt: dict[str, str], eleva
 async def run_dreamgaussian_text2(task_id: str, task_promt: dict[str, str], elevation: int = 0) -> Optional[str]:
     try:
         task_progress[task_id] = "processing"
-        logger.info(f"task_id: {task_id}, function: run_dreamgaussian_text")
-
         
         output_dir = os.path.join(DREAMGAUSSIAN_DIR, "logs", "outputs")
         result_dir = os.path.join(RESULT_DIR, f"{task_id}")
         
         task_value = " ".join(task_promt.values())        
+        logger.info(f"task_id: {task_id}, function: run_dreamgaussian_text, prompt: {task_value}")
+        
 
         command_1 = f"""
         python3 main.py \
@@ -564,7 +563,7 @@ async def lifespan(app: FastAPI):
             task_progress[task.id] = "processing"
             try:
                 if task.type == TaskType.TEXT_TO_3D:
-                    result_path = await run_dreamgaussian_text(task.id, task.data)
+                    result_path = await run_dreamgaussian_text2(task.id, task.data)
                     if result_path:
                         task_result_paths[task.id] = result_path
                         task_progress[task.id] = "done"
@@ -681,7 +680,7 @@ async def websocket_endpoint(websocket: WebSocket):
             status = task_progress.get(task_id, "unknown")
             
             if status == "processing":
-                status = f"processing ({min(99, int((time.time() - start_time) * 0.6))}%)"
+                status = f"processing ({min(99, int((time.time() - start_time) * 0.5))}%)"
                 
             logger.info(f"websocket: task_id: {task_id}, status: {status}")
             await websocket.send_text(f"status: {status}")
