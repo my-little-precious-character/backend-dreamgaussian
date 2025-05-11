@@ -565,7 +565,7 @@ async def lifespan(app: FastAPI):
             task_progress[task.id] = "processing"
             try:
                 if task.type == TaskType.TEXT_TO_3D:
-                    result_path = await run_dreamgaussian_text2(task.id, task.data)
+                    result_path = await run_dreamgaussian_text(task.id, task.data)
                     if result_path:
                         task_result_paths[task.id] = result_path
                         task_progress[task.id] = "done"
