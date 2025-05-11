@@ -15,6 +15,7 @@ import shlex
 import shutil
 
 import logging
+import time
 
 import subprocess
 
@@ -77,13 +78,17 @@ task_result_paths: Dict[str, str] = {}  # [task_id, directory path]
 
 
 #### test ####
-async def handle_test(task):
+async def handle_test(task) -> Optional[str]:
     def copy(src, dst):
         src_path = os.path.join(SAMPLE_DIR, src)
-        dst_path = os.path.join(RESULT_DIR, dst)
+        dst_path = os.path.join(result_path, dst)
         shutil.copyfile(src_path, dst_path)
         return dst_path
 
+    logger.info(f"task_id: {task.id}, function:s handle_test")
+    result_path = os.path.join(RESULT_DIR, task.id)
+    os.makedirs(result_path, exist_ok=True)
+    
     # Wait for 1 second
     for i in range(100):
         await asyncio.sleep(0.01)
@@ -110,23 +115,31 @@ async def handle_test(task):
         mtl_path
     ], check=True)
 
+    return result_path
+
 
 ######## text to 3d ########
 async def run_dreamgaussian_text(task_id: str, task_promt: dict[str, str], elevation: int = 0) -> Optional[str]:
     try:
         task_progress[task_id] = "processing"
+        logger.info(f"task_id: {task_id}, function: run_dreamgaussian_text")
+
         
         output_dir = os.path.join(DREAMGAUSSIAN_DIR, "logs", "outputs")
         result_dir = os.path.join(RESULT_DIR, f"{task_id}")
+        
+        task_value = " ".join(task_promt.values())        
 
         command = f"""
-        python3 main2.py \
+        python3 main.py \
           --config configs/text.yaml  \
-          prompt=\"{task_promt.values}\" \
-          save_path=outputs/{task_id}_mesh \
+          prompt=\"{task_value}\" \
+          save_path=outputs/{task_id} \
           elevation={elevation} \
           force_cuda_rast=True
         """
+        
+        start_time = time.time()
 
         # 프로세스 실행
         process = await asyncio.create_subprocess_exec(
@@ -140,11 +153,14 @@ async def run_dreamgaussian_text(task_id: str, task_promt: dict[str, str], eleva
             if not line:
                 break
             print(f"[{task_id}] {line.decode().strip()}")
+            task_progress[task_id] = f"processing ({min(99, int(time.time() - start_time))}%)"
 
         await process.wait()
         if process.returncode != 0:
             print(f"[{task_id}] Error: {command} failed with code {process.returncode}")
             return None
+        
+        task_progress[task_id] = f"processing (100%)"
 
         if os.path.exists(output_dir):
             target_files = [
@@ -190,6 +206,8 @@ async def run_dreamgaussian_text(task_id: str, task_promt: dict[str, str], eleva
 async def run_dreamgaussian2d(image_path: str, task_id: str, elevation: int = 0) -> Optional[str]:
     try:
         task_progress[task_id] = "processing"
+        logger.info(f"task_id: {task_id}, function: run_dreamgaussian_2d")
+
         # 파일명 설정
         name, ext = os.path.splitext(os.path.basename(image_path)) 
         # name은 오직 파일 명
@@ -239,8 +257,10 @@ async def run_dreamgaussian2d(image_path: str, task_id: str, elevation: int = 0)
           force_cuda_rast=True
         """
 
+        start_time = time.time() 
+        
         # 프로세스 실행
-        for command in [command_1, command_2]:
+        for i, command in enumerate([command_1, command_2]):
             process = await asyncio.create_subprocess_exec(
                 *shlex.split(command),
                 cwd=DREAMGAUSSIAN_DIR,
@@ -252,11 +272,16 @@ async def run_dreamgaussian2d(image_path: str, task_id: str, elevation: int = 0)
                 if not line:
                     break
                 print(f"[{task_id}] {line.decode().strip()}")
+                task_progress[task_id] = f"processing ({min(99, int(time.time() - start_time) * 2)}%)"
 
+                
             await process.wait()
             if process.returncode != 0:
                 print(f"[{task_id}] Error: {command} failed with code {process.returncode}")
                 return None
+            
+        
+        task_progress[task_id] = "processing (100%)"   
 
         if os.path.exists(output_dir):
             target_files = [
@@ -295,40 +320,9 @@ async def run_dreamgaussian2d(image_path: str, task_id: str, elevation: int = 0)
         print(f"[{task_id}] Error: {e}")
         return None
 
+
 ######## worker ########
 
-async def handle_test(task):
-    def copy(src, dst):
-        src_path = os.path.join(SAMPLE_DIR, src)
-        dst_path = os.path.join(RESULT_DIR, dst)
-        shutil.copyfile(src_path, dst_path)
-        return dst_path
-
-    # Wait for 1 second
-    for i in range(100):
-        await asyncio.sleep(0.01)
-        task_progress[task.id] = f"processing ({(i + 1) * 1}%)"
-
-    # Copy dummy results
-    mtl_filename = f"{task.id}_mesh.mtl"
-    albedo_filename = f"{task.id}_mesh_albedo.png"
-    obj_path = copy("luigi_mesh.obj", f"{task.id}_mesh.obj")
-    mtl_path = copy("luigi_mesh.mtl", mtl_filename)
-    copy("luigi_mesh_albedo.png", albedo_filename)
-
-    # Use sed to fix mtllib in .obj
-    subprocess.run([
-        "sed", "-i",
-        f"s|mtllib luigi_mesh.mtl|mtllib {mtl_filename}|g",
-        obj_path
-    ], check=True)
-
-    # Use sed to fix map_Kd in .mtl
-    subprocess.run([
-        "sed", "-i",
-        f"s|map_Kd luigi_mesh_albedo.png|map_Kd {albedo_filename}|g",
-        mtl_path
-    ], check=True)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -358,10 +352,14 @@ async def lifespan(app: FastAPI):
                 
                 # 테스트 모드 (비동기 작업 시뮬레이션)
                 elif task.type in (TaskType.TEXT_TO_3D_TEST, TaskType.IMAGE_TO_3D_TEST):
-                    logger.info(f"[DEBUG] test output test: {result_path}")
-                    await handle_test(task)
-                task_progress[task.id] = "done"
-
+                    result_path = await handle_test(task)
+                    if result_path:
+                        task_result_paths[task.id] = result_path
+                        task_progress[task.id] = "done"
+                        logger.info(f"[DEBUG] test output test: {result_path}")
+                    else:
+                        task_progress[task.id] = "error: model generation failed"
+                
             except Exception as e:
                 task_progress[task.id] = f"error: {str(e)}"
 
@@ -402,6 +400,7 @@ async def text_to_3d(prompt: str = Form(...), mode: str = "prod"):
 
     task_type = TaskType.TEXT_TO_3D if mode == "prod" else TaskType.TEXT_TO_3D_TEST
     task = TaskItem(id=task_id, type=task_type, data={"prompt": prompt})
+    logger.info(f"[DEBUG] task_type: {task_type} {mode}, task_id: {task_id}, prompt: {prompt}")
 
     await task_queue.put(task)
     task_progress[task_id] = "queued"
@@ -430,7 +429,7 @@ async def upload_image(file: UploadFile = File(...), mode: str = "prod"):
 
     task_type = TaskType.IMAGE_TO_3D if mode == "prod" else TaskType.IMAGE_TO_3D_TEST
     task = TaskItem(id=task_id, type=task_type, data={"image_path": file_path})
-    logger.info(f"[DEBUG] task_type: {task_type} {mode}")
+    logger.info(f"[DEBUG] task_type: {task_type} {mode}, task_id: {task_id}")
 
     await task_queue.put(task)
     task_progress[task_id] = "queued"
@@ -445,11 +444,12 @@ async def websocket_endpoint(websocket: WebSocket):
     logger.info(f"[DEBUG] connected host: {websocket.client.host}:{websocket.client.port}")
     try:
         task_id = await websocket.receive_text()
-
+        # i = 0
         while True:
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.5)
             status = task_progress.get(task_id, "unknown")
-
+            
+            logger.info(f"websocket: task_id: {task_id}, status: {status}")
             await websocket.send_text(f"status: {status}")
 
             if status == "done" or status.startswith("error"):
@@ -469,7 +469,7 @@ async def get_result(task_id: str,  type: FileType = Query(FileType.obj)):
     
     
     status = task_progress.get(task_id)
-    logger.info(f"[DEBUG] print status: {status}")
+    logger.info(f"[DEBUG] task_id: {task_id}, file type: {type}, print status: {status}")
     path = task_result_paths.get(task_id)
 
 
