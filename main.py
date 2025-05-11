@@ -224,7 +224,7 @@ async def run_dreamgaussian_text2(task_id: str, task_promt: dict[str, str], elev
 
         command_1 = f"""
         python3 main.py \
-          --config configs/_mv.yaml  \
+          --config configs/text_mv.yaml  \
           prompt=\"{task_value}\" \
           save_path=outputs/{task_id}_mesh\
           elevation={elevation} \
@@ -309,7 +309,7 @@ async def run_dreamgaussian_text2(task_id: str, task_promt: dict[str, str], elev
 async def run_dreamgaussian2d(image_path: str, task_id: str, elevation: int = 0) -> Optional[str]:
     try:
         task_progress[task_id] = "processing"
-        logger.info(f"task_id: {task_id}, function: run_dreamgaussian_2d")
+        logger.info(f"task_id: {task_id}, function: run_dreamgaussian_2d image.yaml")
 
         # 파일명 설정
         name, ext = os.path.splitext(os.path.basename(image_path)) 
@@ -359,8 +359,6 @@ async def run_dreamgaussian2d(image_path: str, task_id: str, elevation: int = 0)
           elevation={elevation} \
           force_cuda_rast=True
         """
-
-        start_time = time.time() 
         
         # 프로세스 실행
         for i, command in enumerate([command_1, command_2]):
@@ -429,7 +427,7 @@ async def run_dreamgaussian2d(image_path: str, task_id: str, elevation: int = 0)
 async def run_dreamgaussian2d2(image_path: str, task_id: str, elevation: int = 0) -> Optional[str]:
     try:
         task_progress[task_id] = "processing"
-        logger.info(f"task_id: {task_id}, function: run_dreamgaussian_2d")
+        logger.info(f"task_id: {task_id}, function: run_dreamgaussian_2d image_sai.yaml")
 
         # 파일명 설정
         name, ext = os.path.splitext(os.path.basename(image_path)) 
@@ -463,24 +461,34 @@ async def run_dreamgaussian2d2(image_path: str, task_id: str, elevation: int = 0
         # stage 1 (main.py)
         command_1 = f"""
         python3 main.py \
-          --config configs/image_sai.yaml  \
-          input=data/{processed_image} \
-          save_path=outputs/{name}_mesh \
-          elevation={elevation} \
-          force_cuda_rast=True
+        --config configs/image_sai.yaml \
+        input=data/{processed_image} \
+        save_path=outputs/{name}_mesh \
+        elevation={elevation} \
+        zero123.use_elevation_cond=false \
+        zero123.elevation_range=[0,0] \
+        zero123.elevation_noise_std=0 \
+        zero123.use_azimuth_cond=false \
+        zero123.azimuth_range=[0,0] \
+        zero123.azimuth_noise_std=0 \
+        force_cuda_rast=True
         """
 
         # stage 2 (main2.py)
         command_2 = f"""
         python3 main2.py \
-          --config configs/image_sai.yaml  \
-          input=data/{processed_image} \
-          save_path=outputs/{name}_mesh \
-          elevation={elevation} \
-          force_cuda_rast=True
+        --config configs/image_sai.yaml \
+        input=data/{processed_image} \
+        save_path=outputs/{name}_mesh \
+        elevation={elevation} \
+        zero123.use_elevation_cond=false \
+        zero123.elevation_range=[0,0] \
+        zero123.elevation_noise_std=0 \
+        zero123.use_azimuth_cond=false \
+        zero123.azimuth_range=[0,0] \
+        zero123.azimuth_noise_std=0 \
+        force_cuda_rast=True
         """
-
-        start_time = time.time() 
         
         # 프로세스 실행
         for i, command in enumerate([command_1, command_2]):

@@ -32,6 +32,9 @@ RUN git clone --recursive https://github.com/ashawkey/diff-gaussian-rasterizatio
 RUN pip install ./diff-gaussian-rasterization
 RUN pip install ./simple-knn
 
+# for text_mv.yaml (mvDream)
+Run pip install git+https://github.com/bytedance/MVDream.git@main
+
 # Pre-built rasterizer wheels
 # RUN pip3 install \  
 #     https://github.com/camenduru/diff-gaussian-rasterization/releases/download/v1.0/diff_gaussian_rasterization-0.0.0-cp310-cp310-linux_x86_64.1.whl \
