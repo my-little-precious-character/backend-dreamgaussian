@@ -18,7 +18,7 @@ RUN pip3 install --upgrade pip
 # Install Python packages
 RUN pip3 install torch-ema einops tensorboardX plyfile dearpygui huggingface_hub \
     diffusers accelerate transformers xatlas trimesh \
-    PyMCubes pymeshlab rembg[gpu,cli] omegaconf ninja torchvision scikit-learn uv matplotlib
+    PyMCubes pymeshlab rembg[gpu,cli] omegaconf ninja torchvision scikit-learn uv matplotlib xformers
 
 # Clone DreamGaussian
 RUN mkdir -p /app && \
@@ -32,8 +32,19 @@ RUN git clone --recursive https://github.com/ashawkey/diff-gaussian-rasterizatio
 RUN pip install ./diff-gaussian-rasterization
 RUN pip install ./simple-knn
 
-# for text_mv.yaml (mvDream)
+# case 1
+# for text_mv.yaml (mvDream) // trash..
 RUN pip install git+https://github.com/bytedance/MVDream.git@main
+
+# case 2
+# for imagedream.yaml (mvDream + zero123 or stable zero123)
+RUN pip install git+https://github.com/bytedance/ImageDream.git@main
+RUN cp -r /tmp/ImageDream/extern/ImageDream/imagedream /app/dreamgaussian/imagedream
+
+# case 3
+# SDXL + ControlNet 조합 사용법
+RUN pip3 install controlnet_aux
+
 
 # Pre-built rasterizer wheels
 # RUN pip3 install \  

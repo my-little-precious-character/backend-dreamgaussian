@@ -219,23 +219,25 @@ async def run_dreamgaussian_text2(task_id: str, task_promt: dict[str, str], elev
         
         task_value = " ".join(task_promt.values())        
         logger.info(f"task_id: {task_id}, function: run_dreamgaussian_text, prompt: {task_value}")
-        
+
 
         command_1 = f"""
         python3 main.py \
-          --config configs/text_mv.yaml  \
+          --config configs/imagedream.yaml  \
           prompt=\"{task_value}\" \
           save_path=outputs/{task_id}_mesh\
           elevation={elevation} \
-          force_cuda_rast=True
+          force_cuda_rast=True \
+          train_geo=true
         """
         command_2 = f"""
         python3 main2.py \
-          --config configs/text_mv.yaml  \
+          --config configs/imagedream.yaml  \
           prompt=\"{task_value}\" \
           save_path=outputs/{task_id}_mesh\
           elevation={elevation} \
-          force_cuda_rast=True
+          force_cuda_rast=True \
+          train_geo=true
         """
                 
         # 프로세스 실행
