@@ -118,7 +118,7 @@ async def handle_test(task) -> Optional[str]:
     return result_path
 
 
-######## text to 3d ########
+######## text to 3d text.yaml(Stable Diffusion SDS) ########
 async def run_dreamgaussian_text(task_id: str, task_promt: dict[str, str], elevation: int = 0) -> Optional[str]:
     try:
         task_progress[task_id] = "processing"
@@ -130,36 +130,138 @@ async def run_dreamgaussian_text(task_id: str, task_promt: dict[str, str], eleva
         
         task_value = " ".join(task_promt.values())        
 
-        command = f"""
+        command_1 = f"""
         python3 main.py \
           --config configs/text.yaml  \
           prompt=\"{task_value}\" \
-          save_path=outputs/{task_id} \
+          save_path=outputs/{task_id}_mesh\
           elevation={elevation} \
           force_cuda_rast=True
         """
-        
-        start_time = time.time()
-
+        command_2 = f"""
+        python3 main2.py \
+          --config configs/text.yaml  \
+          prompt=\"{task_value}\" \
+          save_path=outputs/{task_id}_mesh\
+          elevation={elevation} \
+          force_cuda_rast=True
+        """
+                
         # 프로세스 실행
-        process = await asyncio.create_subprocess_exec(
-            *shlex.split(command),
-            cwd=DREAMGAUSSIAN_DIR,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        while True:
-            line = await process.stdout.readline()
-            if not line:
-                break
-            logger.info(f"[{task_id}] {line.decode().strip()}")
+        for i, command in enumerate([command_1, command_2]):
+            process = await asyncio.create_subprocess_exec(
+                *shlex.split(command),
+                cwd=DREAMGAUSSIAN_DIR,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            while True:
+                line = await process.stdout.readline()
+                if not line:
+                    break
+                logger.info(f"[{task_id}] {line.decode().strip()}")
 
-        await process.wait()
-        if process.returncode != 0:
-            logger.info(f"[{task_id}] Error: {command} failed with code {process.returncode}")
-            return None
+                
+            await process.wait()
+            if process.returncode != 0:
+                logger.info(f"[{task_id}] Error: {command} failed with code {process.returncode}")
+                return None
+            
         
-        task_progress[task_id] = f"processing (100%)"
+        task_progress[task_id] = "processing (100%)"   
+
+
+        if os.path.exists(output_dir):
+            target_files = [
+                f"{task_id}_mesh.obj",
+                f"{task_id}_mesh.mtl",
+                f"{task_id}_mesh_albedo.png"
+            ]
+
+            if os.path.exists(result_dir):
+                # 폴더 내부의 파일만 삭제
+                for file in os.listdir(result_dir):
+                    file_path = os.path.join(result_dir, file)
+                    if os.path.isfile(file_path):
+                        os.remove(file_path)
+                    elif os.path.isdir(file_path):
+                        shutil.rmtree(file_path)
+            else:
+                # 폴더가 아예 없으면 생성
+                os.makedirs(result_dir, exist_ok=True)
+                    
+            for file in target_files:
+                src_file = os.path.join(output_dir, file)
+                dst_file = os.path.join(result_dir, file)
+                
+                if os.path.isfile(src_file):
+                    shutil.move(src_file, dst_file)
+                    logger.info(f"Moved: {src_file} -> {dst_file}")
+            
+            logger.info(f"[{task_id}] Done: {result_dir}")
+            return result_dir
+        
+        logger.info(f"[{task_id}] Error: failed to make {output_dir}")
+        return None
+
+    except Exception as e:
+        logger.info(f"[{task_id}] Error: {e}")
+        return None
+
+
+
+######## text to 3d text_mv.yaml(MVDream 멀티뷰 확산 모델) ########
+async def run_dreamgaussian_text2(task_id: str, task_promt: dict[str, str], elevation: int = 0) -> Optional[str]:
+    try:
+        task_progress[task_id] = "processing"
+        logger.info(f"task_id: {task_id}, function: run_dreamgaussian_text")
+
+        
+        output_dir = os.path.join(DREAMGAUSSIAN_DIR, "logs", "outputs")
+        result_dir = os.path.join(RESULT_DIR, f"{task_id}")
+        
+        task_value = " ".join(task_promt.values())        
+
+        command_1 = f"""
+        python3 main.py \
+          --config configs/_mv.yaml  \
+          prompt=\"{task_value}\" \
+          save_path=outputs/{task_id}_mesh\
+          elevation={elevation} \
+          force_cuda_rast=True
+        """
+        command_2 = f"""
+        python3 main2.py \
+          --config configs/text_mv.yaml  \
+          prompt=\"{task_value}\" \
+          save_path=outputs/{task_id}_mesh\
+          elevation={elevation} \
+          force_cuda_rast=True
+        """
+                
+        # 프로세스 실행
+        for i, command in enumerate([command_1, command_2]):
+            process = await asyncio.create_subprocess_exec(
+                *shlex.split(command),
+                cwd=DREAMGAUSSIAN_DIR,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            while True:
+                line = await process.stdout.readline()
+                if not line:
+                    break
+                logger.info(f"[{task_id}] {line.decode().strip()}")
+
+                
+            await process.wait()
+            if process.returncode != 0:
+                logger.info(f"[{task_id}] Error: {command} failed with code {process.returncode}")
+                return None
+            
+        
+        task_progress[task_id] = "processing (100%)"   
+
 
         if os.path.exists(output_dir):
             target_files = [
@@ -201,7 +303,9 @@ async def run_dreamgaussian_text(task_id: str, task_promt: dict[str, str], eleva
 
 
 
-######## 2d to 3d ########
+
+
+######## 2d to 3d image.yaml(zero123-xl) ########
 async def run_dreamgaussian2d(image_path: str, task_id: str, elevation: int = 0) -> Optional[str]:
     try:
         task_progress[task_id] = "processing"
@@ -317,6 +421,128 @@ async def run_dreamgaussian2d(image_path: str, task_id: str, elevation: int = 0)
     except Exception as e:
         logger.info(f"[{task_id}] Error: {e}")
         return None
+
+
+
+
+######## 2d to 3d image_sai.yaml(stable-zero123) ########
+async def run_dreamgaussian2d2(image_path: str, task_id: str, elevation: int = 0) -> Optional[str]:
+    try:
+        task_progress[task_id] = "processing"
+        logger.info(f"task_id: {task_id}, function: run_dreamgaussian_2d")
+
+        # 파일명 설정
+        name, ext = os.path.splitext(os.path.basename(image_path)) 
+        # name은 오직 파일 명
+        # 입력: "/app/backend-dreamgaussian/uploads/luigi.png"
+        # 출력: "luigi.png"
+        processed_image = f"{name}_rgba.png"
+        input_image_path = os.path.join(DREAMGAUSSIAN_DIR, "data", processed_image)
+        output_dir = os.path.join(DREAMGAUSSIAN_DIR, "logs", "outputs")
+        result_dir = os.path.join(RESULT_DIR, f"{task_id}")
+
+        # 1. image preprocessing (process.py)
+        process_command = f"python3 process.py {image_path}"
+        process = await asyncio.create_subprocess_exec(
+            *shlex.split(process_command),
+            cwd=os.path.join(DREAMGAUSSIAN_DIR),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+
+        if process.returncode != 0:
+            logger.info(f"[{task_id}] process.py failed:\n{stderr.decode().strip()}")
+            return None
+        
+        # image move (UPLOAD_DIR -> data/)
+        if os.path.exists(input_image_path):
+            os.remove(input_image_path)
+        shutil.move(image_path, input_image_path)
+
+        # stage 1 (main.py)
+        command_1 = f"""
+        python3 main.py \
+          --config configs/image_sai.yaml  \
+          input=data/{processed_image} \
+          save_path=outputs/{name}_mesh \
+          elevation={elevation} \
+          force_cuda_rast=True
+        """
+
+        # stage 2 (main2.py)
+        command_2 = f"""
+        python3 main2.py \
+          --config configs/image_sai.yaml  \
+          input=data/{processed_image} \
+          save_path=outputs/{name}_mesh \
+          elevation={elevation} \
+          force_cuda_rast=True
+        """
+
+        start_time = time.time() 
+        
+        # 프로세스 실행
+        for i, command in enumerate([command_1, command_2]):
+            process = await asyncio.create_subprocess_exec(
+                *shlex.split(command),
+                cwd=DREAMGAUSSIAN_DIR,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            while True:
+                line = await process.stdout.readline()
+                if not line:
+                    break
+                logger.info(f"[{task_id}] {line.decode().strip()}")
+
+                
+            await process.wait()
+            if process.returncode != 0:
+                logger.info(f"[{task_id}] Error: {command} failed with code {process.returncode}")
+                return None
+            
+        
+        task_progress[task_id] = "processing (100%)"   
+
+        if os.path.exists(output_dir):
+            target_files = [
+                f"{name}_mesh.obj",
+                f"{name}_mesh.mtl",
+                f"{name}_mesh_albedo.png"
+            ]
+
+            if os.path.exists(result_dir):
+                # 폴더 내부의 파일만 삭제
+                for file in os.listdir(result_dir):
+                    file_path = os.path.join(result_dir, file)
+                    if os.path.isfile(file_path):
+                        os.remove(file_path)
+                    elif os.path.isdir(file_path):
+                        shutil.rmtree(file_path)
+            else:
+                # 폴더가 아예 없으면 생성
+                os.makedirs(result_dir, exist_ok=True)
+                    
+            for file in target_files:
+                src_file = os.path.join(output_dir, file)
+                dst_file = os.path.join(result_dir, file)
+                
+                if os.path.isfile(src_file):
+                    shutil.move(src_file, dst_file)
+                    logger.info(f"Moved: {src_file} -> {dst_file}")
+            
+            logger.info(f"[{task_id}] Done: {result_dir}")
+            return result_dir
+        
+        logger.info(f"[{task_id}] Error: failed to make {output_dir}")
+        return None
+
+    except Exception as e:
+        logger.info(f"[{task_id}] Error: {e}")
+        return None
+
+
 
 
 ######## worker ########
@@ -447,7 +673,7 @@ async def websocket_endpoint(websocket: WebSocket):
             status = task_progress.get(task_id, "unknown")
             
             if status == "processing":
-                status = f"processing ({min(99, int((time.time() - start_time) * 0.8))}%)"
+                status = f"processing ({min(99, int((time.time() - start_time) * 0.6))}%)"
                 
             logger.info(f"websocket: task_id: {task_id}, status: {status}")
             await websocket.send_text(f"status: {status}")
