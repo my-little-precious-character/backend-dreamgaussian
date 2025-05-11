@@ -33,7 +33,7 @@ RUN pip install ./diff-gaussian-rasterization
 RUN pip install ./simple-knn
 
 # for text_mv.yaml (mvDream)
-Run pip install git+https://github.com/bytedance/MVDream.git@main
+RUN pip install git+https://github.com/bytedance/MVDream.git@main
 
 # Pre-built rasterizer wheels
 # RUN pip3 install \  
