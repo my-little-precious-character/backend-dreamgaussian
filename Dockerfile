@@ -67,6 +67,9 @@ WORKDIR /app/backend-dreamgaussian
 # mvdream 파일 덮어쓰기
 RUN cp -f ./mvdream_utils.py /app/dreamgaussian/guidance/mvdream_utils.py
 
+# process 파일 덮어쓰기
+RUN cp -f ./process.py /app/dreamgaussian/process.py
+
 # install dependencies
 RUN uv pip install -r pyproject.toml --system
 

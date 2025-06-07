@@ -19,6 +19,8 @@ import time
 
 import subprocess
 
+from PIL import Image, ImageFilter
+
 
 ######## make log ########
 
@@ -75,6 +77,25 @@ SAMPLE_DIR = "results-sample"
 task_queue = asyncio.Queue()
 task_progress: Dict[str, str] = {} # [task_id, queued | processing | done | error]
 task_result_paths: Dict[str, str] = {}  # [task_id, directory path]
+
+
+### convert to png ####
+async def convert_to_png(task_id: str, input_path):
+    if input_path.lower().endswith('.png'):
+        return input_path
+    output_path = os.path.splitext(input_path)[0] + '.png'
+
+    try:
+        with Image.open(input_path) as img:
+            img = img.convert('RGB')
+            # img = img.filter(ImageFilter.MedianFilter(size=3))
+            # img = img.convert('RGBA') # also need transparency
+            img.save(output_path, 'PNG')
+            logger.info(f"task_id: {task_id}, Converted: {input_path} → {output_path}")
+            return output_path
+    except Exception as e:
+       logger.info(f"task_id: {task_id}, Convert failed: {e}")
+       return None
 
 
 #### test ####
@@ -312,6 +333,11 @@ async def run_dreamgaussian2d(image_path: str, task_id: str, elevation: int = 0)
         task_progress[task_id] = "processing"
         logger.info(f"task_id: {task_id}, function: run_dreamgaussian_2d image.yaml")
 
+        # png가 아니면 png로 바꿔주기
+        image_path = await convert_to_png(task_id, image_path)
+        if image_path is None:
+            return None
+
         # 파일명 설정
         name, ext = os.path.splitext(os.path.basename(image_path)) 
         # name은 오직 파일 명
@@ -429,6 +455,12 @@ async def run_dreamgaussian2d2(image_path: str, task_id: str, elevation: int = 0
     try:
         task_progress[task_id] = "processing"
         logger.info(f"task_id: {task_id}, function: run_dreamgaussian_2d image_sai.yaml")
+
+
+        # png가 아니면 png로 바꿔주기
+        image_path = await convert_to_png(task_id, image_path)
+        if image_path is None:
+            return None
 
         # 파일명 설정
         name, ext = os.path.splitext(os.path.basename(image_path)) 
