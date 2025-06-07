@@ -18,7 +18,7 @@ RUN pip3 install --upgrade pip
 # Install Python packages
 RUN pip3 install torch-ema einops tensorboardX plyfile dearpygui huggingface_hub \
     diffusers accelerate transformers xatlas trimesh \
-    PyMCubes pymeshlab rembg[gpu,cli] omegaconf ninja torchvision scikit-learn uv matplotlib xformers
+    PyMCubes pymeshlab rembg[gpu,cli] omegaconf ninja torchvision scikit-learn uv matplotlib xformers realesrgan
 
 # Clone DreamGaussian
 RUN mkdir -p /app && \

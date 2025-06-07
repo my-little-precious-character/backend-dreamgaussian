@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import shlex
 import shutil
+import torch
 
 import logging
 import time
@@ -20,6 +21,7 @@ import time
 import subprocess
 
 from PIL import Image, ImageFilter
+from realesrgan import RealESRGAN
 
 
 ######## make log ########
@@ -71,6 +73,14 @@ os.makedirs(RESULT_DIR, exist_ok=True)
 
 SAMPLE_DIR = "results-sample"
 
+
+######## upscaling model ########
+device = torch.device("cuda" if torch.cuda.is_available()
+                      else "mps" if torch.backends.mps.is_available()
+                      else "cpu")
+model = RealESRGAN(device, scale=4)
+model.load_weights("RealESRGAN_x4plus")
+
 ######## global variables ########
 
 # queue & task
@@ -79,7 +89,31 @@ task_progress: Dict[str, str] = {} # [task_id, queued | processing | done | erro
 task_result_paths: Dict[str, str] = {}  # [task_id, directory path]
 
 
-### convert to png ####
+#### upscaling ####
+async def upscale_image(task_id: str, input_path: str):
+    loop = asyncio.get_running_loop()
+
+    def _work() -> None:
+        with Image.open(input_path) as im:
+            has_alpha = ("A" in im.getbands()) or ("transparency" in im.info)
+            if has_alpha:
+                alpha = im.convert("RGBA").getchannel("A")   # tRNS도 반영
+            rgb   = im.convert("RGB")
+
+            sr_rgb = model.predict(rgb)                     # Real-ESRGAN
+            if has_alpha:
+                sr_a  = alpha.resize(sr_rgb.size, Image.BICUBIC)
+                sr    = Image.merge("RGBA", (*sr_rgb.split(), sr_a))
+            else:
+                sr = sr_rgb
+
+            sr.save(input_path, compress_level=2)  # PNG 덮어쓰기
+
+    await loop.run_in_executor(None, _work)
+    logger.info(f"task_id: {task_id}, Upscaling complete! Filename: {input_path}") 
+
+
+#### convert to png ####
 async def convert_to_png(task_id: str, input_path):
     if input_path.lower().endswith('.png'):
         return input_path
