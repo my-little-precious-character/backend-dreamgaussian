@@ -21,7 +21,10 @@ import time
 import subprocess
 
 from PIL import Image, ImageFilter
-from realesrgan import RealESRGAN
+from realesrgan import RealESRGANer
+from basicsr.archs.rrdbnet_arch import RRDBNet
+import cv2
+import numpy as np
 
 
 ######## make log ########
@@ -78,8 +81,22 @@ SAMPLE_DIR = "results-sample"
 device = torch.device("cuda" if torch.cuda.is_available()
                       else "mps" if torch.backends.mps.is_available()
                       else "cpu")
-model = RealESRGAN(device, scale=4)
-model.load_weights("RealESRGAN_x4plus")
+
+
+net_rrdb = RRDBNet(num_in_ch=3, num_out_ch=3,
+                   num_feat=64, num_block=23,
+                   num_grow_ch=32, scale=4)
+
+model = RealESRGANer(
+    scale=4,
+    model_path='weights/RealESRGAN_x4plus.pth',
+    dni_weight=None,
+    model=net_rrdb,          # ★ network 대신 model 파라미터
+    tile=0, tile_pad=10, pre_pad=0,
+    half=True,
+    device=device,
+)
+
 
 ######## global variables ########
 
@@ -100,7 +117,9 @@ async def upscale_image(task_id: str, input_path: str):
                 alpha = im.convert("RGBA").getchannel("A")   # tRNS도 반영
             rgb   = im.convert("RGB")
 
-            sr_rgb = model.predict(rgb)                     # Real-ESRGAN
+            sr_bgr, _ = model.enhance(cv2.cvtColor(np.array(rgb), cv2.COLOR_RGB2BGR), outscale=4)
+            sr_rgb = Image.fromarray(cv2.cvtColor(sr_bgr, cv2.COLOR_BGR2RGB))
+            
             if has_alpha:
                 sr_a  = alpha.resize(sr_rgb.size, Image.BICUBIC)
                 sr    = Image.merge("RGBA", (*sr_rgb.split(), sr_a))
@@ -471,6 +490,9 @@ async def run_dreamgaussian2d(image_path: str, task_id: str, elevation: int = 0)
                     shutil.move(src_file, dst_file)
                     logger.info(f"Moved: {src_file} -> {dst_file}")
             
+            dst_file = os.path.join(result_dir, target_files[2])
+            await upscale_image(task_id, dst_file)
+
             logger.info(f"[{task_id}] Done: {result_dir}")
             return result_dir
         
@@ -607,6 +629,9 @@ async def run_dreamgaussian2d2(image_path: str, task_id: str, elevation: int = 0
                     shutil.move(src_file, dst_file)
                     logger.info(f"Moved: {src_file} -> {dst_file}")
             
+            dst_file = os.path.join(result_dir, target_files[2])
+            await upscale_image(task_id, dst_file)
+
             logger.info(f"[{task_id}] Done: {result_dir}")
             return result_dir
         
@@ -771,7 +796,7 @@ async def websocket_endpoint(websocket: WebSocket):
             status = task_progress.get(task_id, "unknown")
             
             if status == "processing":
-                status = f"processing ({min(99, int((time.time() - start_time) * 1.6))}%)"
+                status = f"processing ({min(99, int((time.time() - start_time) * 1.3))}%)"
 
             logger.info(f"websocket: task_id: {task_id}, status: {status}")
             await websocket.send_text(f"status: {status}")

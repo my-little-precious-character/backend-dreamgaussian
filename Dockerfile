@@ -18,7 +18,7 @@ RUN pip3 install --upgrade pip
 # Install Python packages
 RUN pip3 install torch-ema einops tensorboardX plyfile dearpygui huggingface_hub \
     diffusers accelerate transformers xatlas trimesh \
-    PyMCubes pymeshlab rembg[gpu,cli] omegaconf ninja torchvision scikit-learn uv matplotlib xformers realesrgan
+    PyMCubes pymeshlab rembg[gpu,cli] omegaconf ninja torchvision scikit-learn uv matplotlib xformers wget
 
 # Clone DreamGaussian
 RUN mkdir -p /app && \
@@ -59,10 +59,13 @@ RUN pip3 install git+https://github.com/ashawkey/kiuikit
 
 # Create a data directory
 RUN mkdir -p /app/dreamgaussian/data
-RUN mkdir -p /app/backend-dreamgaussian
+RUN mkdir -p /app/backend-dreamgaussian/weights
 
 COPY . /app/backend-dreamgaussian/
 WORKDIR /app/backend-dreamgaussian
+
+RUN pip install --no-cache-dir git+https://github.com/xinntao/BasicSR.git \
+    && pip install --no-cache-dir git+https://github.com/xinntao/Real-ESRGAN.git
 
 # mvdream 파일 덮어쓰기
 RUN cp -f ./mvdream_utils.py /app/dreamgaussian/guidance/mvdream_utils.py
