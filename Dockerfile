@@ -62,6 +62,10 @@ RUN mkdir -p /app/dreamgaussian/data
 RUN mkdir -p /app/backend-dreamgaussian/weights
 
 COPY . /app/backend-dreamgaussian/
+WORKDIR /app/backend-dreamgaussian/weights
+
+# upscaling 을 위한 model weight 다운로드
+RUN wget https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth
 WORKDIR /app/backend-dreamgaussian
 
 RUN pip install --no-cache-dir git+https://github.com/xinntao/BasicSR.git \
