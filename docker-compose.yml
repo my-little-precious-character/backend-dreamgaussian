@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   dreamgaussian:
     image: dreamgaussian #이미지 이름
