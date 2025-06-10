@@ -4,6 +4,7 @@
 
 # 명령어 예시
 # python3 two_stage_controlnet.py --prompt "a cute mystical creature, digital art" --negative "low quality, worst quality" --output creature.png
+# python3 two_stage_controlnet.py --control_image "../dreamgaussian/t-pose guide.png" --prompt "a cute one woman, T-pose, full-shot, full-body, no-background" --negative "low quality, worst quality" --output creature.png
 
 
 import torch
@@ -17,8 +18,8 @@ parser.add_argument("--prompt", type=str, required=True, help="텍스트 프롬�
 parser.add_argument("--negative", type=str, default="", help="부정 프롬프트 (원하지 않는 이미지 요소)")
 parser.add_argument("--output", type=str, default="result.png", help="저장할 출력 이미지 경로")
 parser.add_argument("--control_image", type=str, default=None, help="ControlNet 용 입력 이미지 경로 (에지 지도 등)")
-parser.add_argument("--height", type=int, default=256, help="출력 이미지 높이(px)")
-parser.add_argument("--width", type=int, default=256, help="출력 이미지 폭(px)")
+parser.add_argument("--height", type=int, default=1024, help="출력 이미지 높이(px)")
+parser.add_argument("--width", type=int, default=1024, help="출력 이미지 폭(px)")
 parser.add_argument("--steps", type=int, default=30, help="확산 단계 수 (클수록 이미지 품질 향상)")
 parser.add_argument("--cfg_scale", type=float, default=7.5, help="텍스트 조건 CFG 강도(guidance_scale)")
 parser.add_argument("--control_scale", type=float, default=1.0, help="ControlNet 적용 강도(controlnet_conditioning_scale)")
