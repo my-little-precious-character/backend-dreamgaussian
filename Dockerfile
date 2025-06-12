@@ -9,16 +9,20 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
     git python3 python3-pip python3-venv \
     libgl1-mesa-glx libglib2.0-0 \
-    build-essential cmake curl unzip libegl-dev \
+    build-essential cmake curl unzip libegl-dev wget\
     && rm -rf /var/lib/apt/lists/*
 
 # Upgrade pip
 RUN pip3 install --upgrade pip
 
+RUN pip3 install torch==2.7.0 torchvision
+
 # Install Python packages
 RUN pip3 install torch-ema einops tensorboardX plyfile dearpygui huggingface_hub \
     diffusers accelerate transformers xatlas trimesh \
-    PyMCubes pymeshlab rembg[gpu,cli] omegaconf ninja torchvision scikit-learn uv matplotlib xformers wget
+    PyMCubes pymeshlab rembg[gpu,cli] omegaconf ninja scikit-learn uv matplotlib 
+
+RUN pip3 install xformers==0.0.30
 
 # Clone DreamGaussian
 RUN mkdir -p /app && \
@@ -38,7 +42,8 @@ RUN pip install git+https://github.com/bytedance/MVDream.git@main
 
 # case 2
 # for imagedream.yaml (mvDream + zero123 or stable zero123)
-RUN pip install git+https://github.com/bytedance/ImageDream.git@main
+RUN git clone https://github.com/bytedance/ImageDream.git /tmp/ImageDream
+# RUN pip install git+https://github.com/bytedance/ImageDream.git@main
 RUN cp -r /tmp/ImageDream/extern/ImageDream/imagedream /app/dreamgaussian/imagedream
 
 # case 3

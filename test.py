@@ -53,7 +53,7 @@
 
 #############
 
-# test.py --prompt "a cute one woman, T-pose, full-shot, full-body, no-background" --negative "low quality, worst quality" --output creature.png 
+# python3 test.py --prompt "a cute one woman, T-pose, full-shot, full-body, no-background" --negative "low quality, worst quality" --output creature.png 
 
 #!/usr/bin/env python3
 # sdxl_text2img.py

@@ -112,6 +112,7 @@ async def upscale_image(task_id: str, input_path: str):
 
     def _work() -> None:
         with Image.open(input_path) as im:
+            logger.info(f"task_id: {task_id}, input image size: {im.size}") 
             has_alpha = ("A" in im.getbands()) or ("transparency" in im.info)
             if has_alpha:
                 alpha = im.convert("RGBA").getchannel("A")   # tRNS도 반영
@@ -127,6 +128,8 @@ async def upscale_image(task_id: str, input_path: str):
                 sr = sr_rgb
 
             sr.save(input_path, compress_level=2)  # PNG 덮어쓰기
+            logger.info(f"task_id: {task_id}, output image size: {sr.size}") 
+
 
     await loop.run_in_executor(None, _work)
     logger.info(f"task_id: {task_id}, Upscaling complete! Filename: {input_path}") 
@@ -191,8 +194,163 @@ async def handle_test(task) -> Optional[str]:
 
     return result_path
 
+######## text to 3d Stable Diffusion + image.yaml  ########
+async def run_dreamgaussian_text_image(task_id: str, task_promt: dict[str, str], elevation: int = 0) -> Optional[str]:
+    try:
+        task_progress[task_id] = "processing"
+        task_value = " ".join(task_promt.values())        
+        logger.info(f"task_id: {task_id}, function: run_dreamgaussian_text, prompt: {task_value}")
 
-######## text to 3d text.yaml(Stable Diffusion SDS) ########
+        #### 여기에서 image_path로 image 생성해야함.
+        image_path = os.path.join(UPLOAD_DIR, f"{task_id}.png")
+        
+        command_f = f"""
+        python3 two_stage_controlnet.py \
+        --control_image "./new_image.png" \
+        --prompt "{task_value}, t-pose, full body, arms outstretched, facing forward, standing, no background, photorealistic, studio lighting, centered" \
+        --negative "low quality, worst quality, multiple people, two faces, extra limbs, extra arms, extra legs, mutated hands, mutated legs, deformed body, merged faces, merged bodies, back_head, shadow, floor, cropped, duplicate, strange, distorted" \
+        --output {image_path}"""
+
+
+        process_f = await asyncio.create_subprocess_exec(
+                *shlex.split(command_f),
+                cwd=BASE_DIR,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+        while True:
+            line = await process_f.stdout.readline()
+            if not line:
+                break
+            logger.info(f"[{task_id}] {line.decode().strip()}")
+
+            
+        await process_f.wait()
+        if process_f.returncode != 0:
+            logger.info(f"[{task_id}] Error: {command} failed with code {process_f.returncode}")
+            return None
+
+        
+        # png가 아니면 png로 바꿔주기
+        image_path = await convert_to_png(task_id, image_path)
+        if image_path is None:
+            return None
+
+        # 파일명 설정
+        name, ext = os.path.splitext(os.path.basename(image_path)) 
+        # name은 오직 파일 명
+        # 입력: "/app/backend-dreamgaussian/uploads/luigi.png"
+        # 출력: "luigi.png"
+        processed_image = f"{name}_rgba.png"
+        input_image_path = os.path.join(DREAMGAUSSIAN_DIR, "data", processed_image)
+        output_dir = os.path.join(DREAMGAUSSIAN_DIR, "logs", "outputs")
+        result_dir = os.path.join(RESULT_DIR, f"{task_id}")
+
+        # 1. image preprocessing (process.py)
+        process_command = f"python3 process.py {image_path}"
+        process = await asyncio.create_subprocess_exec(
+            *shlex.split(process_command),
+            cwd=os.path.join(DREAMGAUSSIAN_DIR),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+
+        if process.returncode != 0:
+            logger.info(f"[{task_id}] process.py failed:\n{stderr.decode().strip()}")
+            return None
+        
+        # image move (UPLOAD_DIR -> data/)
+        if os.path.exists(input_image_path):
+            os.remove(input_image_path)
+        shutil.move(image_path, input_image_path)
+        
+
+        # stage 1 (main.py)
+        command_1 = f"""
+        python3 main.py \
+          --config configs/image.yaml  \
+          input=data/{processed_image} \
+          save_path=outputs/{name}_mesh \
+          elevation={elevation} \
+          force_cuda_rast=True
+        """
+
+        # stage 2 (main2.py)
+        command_2 = f"""
+        python3 main2.py \
+          --config configs/image.yaml  \
+          input=data/{processed_image} \
+          save_path=outputs/{name}_mesh \
+          elevation={elevation} \
+          force_cuda_rast=True
+        """
+        
+        # 프로세스 실행
+        for i, command in enumerate([command_1, command_2]):
+            process = await asyncio.create_subprocess_exec(
+                *shlex.split(command),
+                cwd=DREAMGAUSSIAN_DIR,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            while True:
+                line = await process.stdout.readline()
+                if not line:
+                    break
+                logger.info(f"[{task_id}] {line.decode().strip()}")
+
+                
+            await process.wait()
+            if process.returncode != 0:
+                logger.info(f"[{task_id}] Error: {command} failed with code {process.returncode}")
+                return None
+            
+        
+        task_progress[task_id] = "processing (100%)"   
+
+        if os.path.exists(output_dir):
+            target_files = [
+                f"{name}_mesh.obj",
+                f"{name}_mesh.mtl",
+                f"{name}_mesh_albedo.png"
+            ]
+
+            if os.path.exists(result_dir):
+                # 폴더 내부의 파일만 삭제
+                for file in os.listdir(result_dir):
+                    file_path = os.path.join(result_dir, file)
+                    if os.path.isfile(file_path):
+                        os.remove(file_path)
+                    elif os.path.isdir(file_path):
+                        shutil.rmtree(file_path)
+            else:
+                # 폴더가 아예 없으면 생성
+                os.makedirs(result_dir, exist_ok=True)
+                    
+            for file in target_files:
+                src_file = os.path.join(output_dir, file)
+                dst_file = os.path.join(result_dir, file)
+                
+                if os.path.isfile(src_file):
+                    shutil.move(src_file, dst_file)
+                    logger.info(f"Moved: {src_file} -> {dst_file}")
+            
+            dst_file = os.path.join(result_dir, target_files[2])
+            await upscale_image(task_id, dst_file)
+
+            logger.info(f"[{task_id}] Done: {result_dir}")
+            return result_dir
+        
+        logger.info(f"[{task_id}] Error: failed to make {output_dir}")
+        return None
+
+    except Exception as e:
+        logger.info(f"[{task_id}] Error: {e}")
+        return None
+
+
+######## text to 3d text.yaml ########
 async def run_dreamgaussian_text(task_id: str, task_promt: dict[str, str], elevation: int = 0) -> Optional[str]:
     try:
         task_progress[task_id] = "processing"
@@ -656,7 +814,7 @@ async def lifespan(app: FastAPI):
             task_progress[task.id] = "processing"
             try:
                 if task.type == TaskType.TEXT_TO_3D:
-                    result_path = await run_dreamgaussian_text(task.id, task.data)
+                    result_path = await run_dreamgaussian_text_image(task.id, task.data)
                     if result_path:
                         task_result_paths[task.id] = result_path
                         task_progress[task.id] = "done"
@@ -706,6 +864,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "https://my-character.cho0h5.org",
+        "http://my-little-precious-character.iptime.org:3000"
     ],
     allow_credentials=True,
     allow_methods=["*"], 
@@ -796,7 +955,7 @@ async def websocket_endpoint(websocket: WebSocket):
             status = task_progress.get(task_id, "unknown")
             
             if status == "processing":
-                status = f"processing ({min(99, int((time.time() - start_time) * 1.3))}%)"
+                status = f"processing ({min(99, int((time.time() - start_time) * 1.2))}%)"
 
             logger.info(f"websocket: task_id: {task_id}, status: {status}")
             await websocket.send_text(f"status: {status}")
