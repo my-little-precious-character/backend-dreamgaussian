@@ -90,10 +90,10 @@ If you see a similar output, your GPU is correctly configured.
 Build and run your Docker containers:
 
 ```bash
-docker compose up --build
+docker compose up --build -d
 ```
 
-Access the container:
+<!-- Access the container:
 
 ```bash
 docker exec -it dreamgaussian bash
@@ -111,4 +111,4 @@ Run the main application:
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
----
+--- -->
