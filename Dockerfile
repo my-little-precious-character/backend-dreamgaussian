@@ -90,4 +90,4 @@ EXPOSE 8000
 
 
 # Default entrypoint (change this to actual DreamGaussian script as needed)
-CMD ["bash"]
+# CMD ["uvicorn", "main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]

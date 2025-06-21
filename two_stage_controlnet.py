@@ -1,11 +1,14 @@
 # two_stage_controlnet.py
-#SDXL(또는 Stable Diffusion)으로 베이스 이미지 생성
+#Stable Diffusion으로 베이스 이미지 생성
 #생성된 이미지를 ControlNet 파이프라인에 입력
 
 # 명령어 예시
 # python3 two_stage_controlnet.py --prompt "a cute mystical creature, digital art" --negative "low quality, worst quality" --output creature.png
-# python3 two_stage_controlnet.py --control_image "../dreamgaussian/t-pose guide.png" --prompt "a cute one woman, T-pose, full-shot, full-body, no-background" --negative "low quality, worst quality" --output creature.png
+# python3 two_stage_controlnet.py --control_image "./new_image.png" --prompt "a cute one woman, T-pose, full-shot, full-body, no-background" --negative "low quality, worst quality, colorful_background" --output creature1.png
+#  python3 two_stage_controlnet.py --control_image "./new_image.png" --prompt "a single young woman, t-pose, full body, arms outstretched, facing forward, standing, no background, photorealistic, studio lighting, centered" --negative "low quality, worst quality, multiple people, two faces, extra limbs, extra arms, extra legs, mutated hands, mutated legs, deformed body, merged faces, merged bodies, back_head, shadow, floor, cropped, duplicate, strange, distorted" --output creature1.png
 
+# prompt "a single young woman, t-pose, full body, arms outstretched, facing forward, standing, no background, photorealistic, studio lighting, centered"
+# negative "low quality, worst quality, multiple people, two faces, extra limbs, extra arms, extra legs, mutated hands, mutated legs, deformed body, merged faces, merged bodies, back_head, shadow, floor, cropped, duplicate, strange, distorted"
 
 import torch
 from diffusers import StableDiffusionControlNetPipeline, ControlNetModel, UniPCMultistepScheduler
@@ -20,14 +23,16 @@ parser.add_argument("--output", type=str, default="result.png", help="저장할 
 parser.add_argument("--control_image", type=str, default=None, help="ControlNet 용 입력 이미지 경로 (에지 지도 등)")
 parser.add_argument("--height", type=int, default=1024, help="출력 이미지 높이(px)")
 parser.add_argument("--width", type=int, default=1024, help="출력 이미지 폭(px)")
-parser.add_argument("--steps", type=int, default=30, help="확산 단계 수 (클수록 이미지 품질 향상)")
+parser.add_argument("--steps", type=int, default=35, help="확산 단계 수 (클수록 이미지 품질 향상)")
 parser.add_argument("--cfg_scale", type=float, default=7.5, help="텍스트 조건 CFG 강도(guidance_scale)")
-parser.add_argument("--control_scale", type=float, default=1.0, help="ControlNet 적용 강도(controlnet_conditioning_scale)")
+parser.add_argument("--control_scale", type=float, default=0.7, help="ControlNet 적용 강도(controlnet_conditioning_scale)")
+parser.add_argument("--controlnet_model", type=str, default="lllyasviel/sd-controlnet-openpose", help="ControlNet 모델 ID")
 args = parser.parse_args()
 
 # 1. 모델 ID 설정 및 모델 로드
 base_model_id = "runwayml/stable-diffusion-v1-5"
-controlnet_model_id = "lllyasviel/sd-controlnet-canny"
+# controlnet_model_id = "lllyasviel/sd-controlnet-canny"
+controlnet_model_id = args.controlnet_model
 
 # Diffusers 모델 다운로드 및 로드 (자동으로 권한 인증 필요 시 로그인)
 controlnet = ControlNetModel.from_pretrained(controlnet_model_id, torch_dtype=torch.float16)
