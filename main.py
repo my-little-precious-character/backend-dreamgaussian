@@ -207,7 +207,7 @@ async def run_dreamgaussian_text_image(task_id: str, task_promt: dict[str, str],
         command_f = f"""
         python3 two_stage_controlnet.py \
         --control_image "./new_image.png" \
-        --prompt "{task_value}, t-pose, full body, arms outstretched, facing forward, standing, no background, photorealistic, studio lighting, centered" \
+        --prompt "{task_value}, t-pose, full body, arms outstretched, facing forward, standing, front, no background, photorealistic, studio lighting, centered" \
         --negative "low quality, worst quality, multiple people, two faces, extra limbs, extra arms, extra legs, mutated hands, mutated legs, deformed body, merged faces, merged bodies, back_head, shadow, floor, cropped, duplicate, strange, distorted" \
         --output {image_path}"""
 
@@ -815,6 +815,7 @@ async def lifespan(app: FastAPI):
             try:
                 if task.type == TaskType.TEXT_TO_3D:
                     result_path = await run_dreamgaussian_text_image(task.id, task.data)
+                    # result_path = await run_dreamgaussian_text(task.id, task.data)
                     if result_path:
                         task_result_paths[task.id] = result_path
                         task_progress[task.id] = "done"
@@ -831,7 +832,7 @@ async def lifespan(app: FastAPI):
                         logger.info(f"[DEBUG] output test: {result_path}")
                     else:
                         task_progress[task.id] = "error: model generation failed"
-                
+
                 # 테스트 모드 (비동기 작업 시뮬레이션)
                 elif task.type in (TaskType.TEXT_TO_3D_TEST, TaskType.IMAGE_TO_3D_TEST):
                     result_path = await handle_test(task)
@@ -955,7 +956,7 @@ async def websocket_endpoint(websocket: WebSocket):
             status = task_progress.get(task_id, "unknown")
             
             if status == "processing":
-                status = f"processing ({min(99, int((time.time() - start_time) * 1.2))}%)"
+                status = f"processing ({min(99, int((time.time() - start_time) * 1.1))}%)"
 
             logger.info(f"websocket: task_id: {task_id}, status: {status}")
             await websocket.send_text(f"status: {status}")
