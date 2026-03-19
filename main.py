@@ -206,7 +206,7 @@ async def run_dreamgaussian_text_image(task_id: str, task_promt: dict[str, str],
         
         command_f = f"""
         python3 two_stage_controlnet.py \
-        --control_image "./new_image.png" \
+        --control_image "./t-pose_guide.png" \
         --prompt "{task_value}, t-pose, full body, arms outstretched, facing forward, standing, front, no background, photorealistic, studio lighting, centered" \
         --negative "low quality, worst quality, multiple people, two faces, extra limbs, extra arms, extra legs, mutated hands, mutated legs, deformed body, merged faces, merged bodies, back_head, shadow, floor, cropped, duplicate, strange, distorted" \
         --output {image_path}"""
